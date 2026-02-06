@@ -1,0 +1,278 @@
+import { SimplexNoise } from './noise.js';
+import { BlockType, BlockData } from './blocks.js';
+import { VillageGenerator } from './village.js';
+
+export const CHUNK_SIZE = 16;
+export const WORLD_HEIGHT = 128;
+const SEA_LEVEL = 40;
+
+export class World {
+  constructor(seed = 12345) {
+    this.seed = seed;
+    this.chunks = new Map();
+    this.noise = new SimplexNoise(seed);
+    this.noise2 = new SimplexNoise(seed * 7 + 3);
+    this.noise3 = new SimplexNoise(seed * 13 + 7);
+    this.treeNoise = new SimplexNoise(seed * 17 + 11);
+    this.villageGen = new VillageGenerator(seed);
+    this.placedVillages = new Set(); // track which villages have been placed
+  }
+
+  chunkKey(cx, cz) {
+    return `${cx},${cz}`;
+  }
+
+  getChunk(cx, cz) {
+    return this.chunks.get(this.chunkKey(cx, cz));
+  }
+
+  generateChunk(cx, cz) {
+    const key = this.chunkKey(cx, cz);
+    if (this.chunks.has(key)) return this.chunks.get(key);
+
+    const blocks = new Uint8Array(CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE);
+    const chunk = { cx, cz, blocks, dirty: true, mesh: null, waterMesh: null };
+
+    const wx = cx * CHUNK_SIZE;
+    const wz = cz * CHUNK_SIZE;
+
+    // Generate terrain height map and populate blocks
+    for (let x = 0; x < CHUNK_SIZE; x++) {
+      for (let z = 0; z < CHUNK_SIZE; z++) {
+        const worldX = wx + x;
+        const worldZ = wz + z;
+
+        // Multi-octave terrain height
+        const continentalness = this.noise.fbm2D(worldX * 0.001, worldZ * 0.001, 4, 2, 0.5);
+        const erosion = this.noise.fbm2D(worldX * 0.004, worldZ * 0.004, 6, 2, 0.5);
+        const detail = this.noise2.fbm2D(worldX * 0.02, worldZ * 0.02, 3, 2, 0.45);
+
+        let height = SEA_LEVEL + continentalness * 12 + erosion * 6 + detail * 3;
+        height = Math.floor(height);
+        height = Math.max(1, Math.min(WORLD_HEIGHT - 2, height));
+
+        // Biome determination
+        const temp = this.noise3.fbm2D(worldX * 0.002 + 500, worldZ * 0.002 + 500, 3);
+        const moisture = this.noise3.fbm2D(worldX * 0.002 + 1000, worldZ * 0.002 + 1000, 3);
+
+        const isBeach = height >= SEA_LEVEL - 1 && height <= SEA_LEVEL + 2;
+        const isDesert = temp > 0.3 && moisture < -0.1;
+        const isSnow = temp < -0.4;
+
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
+          const idx = (x * WORLD_HEIGHT + y) * CHUNK_SIZE + z;
+
+          if (y === 0) {
+            blocks[idx] = BlockType.BEDROCK;
+          } else if (y < height - 4) {
+            // Deep underground: stone with ores
+            blocks[idx] = BlockType.STONE;
+
+            // Cave generation using 3D noise
+            const cave1 = this.noise.noise3D(worldX * 0.03, y * 0.05, worldZ * 0.03);
+            const cave2 = this.noise2.noise3D(worldX * 0.04, y * 0.04, worldZ * 0.04);
+            if (Math.abs(cave1) < 0.08 && Math.abs(cave2) < 0.08 && y > 5 && y < height - 8) {
+              blocks[idx] = BlockType.AIR;
+              continue;
+            }
+
+            // Ore generation
+            if (y < 20) {
+              const oreVal = this.noise3.noise3D(worldX * 0.1, y * 0.1, worldZ * 0.1);
+              if (oreVal > 0.6) blocks[idx] = BlockType.IRON_ORE;
+            }
+            if (y < 50) {
+              const coalVal = this.noise3.noise3D(worldX * 0.08 + 100, y * 0.08, worldZ * 0.08 + 100);
+              if (coalVal > 0.55) blocks[idx] = BlockType.COAL_ORE;
+            }
+            // Gravel patches
+            const gravelVal = this.noise2.noise3D(worldX * 0.06, y * 0.06, worldZ * 0.06);
+            if (gravelVal > 0.65 && y < 40) blocks[idx] = BlockType.GRAVEL;
+          } else if (y < height) {
+            // Near surface
+            if (isDesert || isBeach) {
+              blocks[idx] = BlockType.SAND;
+            } else {
+              blocks[idx] = BlockType.DIRT;
+            }
+          } else if (y === height) {
+            // Surface
+            if (isDesert) {
+              blocks[idx] = BlockType.SAND;
+            } else if (isBeach && height <= SEA_LEVEL + 1) {
+              blocks[idx] = BlockType.SAND;
+            } else if (isSnow) {
+              blocks[idx] = BlockType.SNOW;
+            } else {
+              blocks[idx] = BlockType.GRASS;
+            }
+          } else if (y <= SEA_LEVEL && y > height) {
+            blocks[idx] = BlockType.WATER;
+          }
+        }
+
+        // Tree generation
+        if (height > SEA_LEVEL + 1 && !isDesert && !isBeach && !isSnow) {
+          const treeVal = this.treeNoise.noise2D(worldX * 0.5, worldZ * 0.5);
+          if (treeVal > 0.6 && x > 2 && x < CHUNK_SIZE - 3 && z > 2 && z < CHUNK_SIZE - 3) {
+            this._placeTree(blocks, x, height + 1, z);
+          }
+        }
+      }
+    }
+
+    this.chunks.set(key, chunk);
+    return chunk;
+  }
+
+  _placeTree(blocks, x, y, z) {
+    const trunkHeight = 4 + Math.floor(Math.random() * 3);
+
+    // Check we have room
+    if (y + trunkHeight + 3 >= WORLD_HEIGHT) return;
+
+    // Trunk
+    for (let dy = 0; dy < trunkHeight; dy++) {
+      const idx = (x * WORLD_HEIGHT + (y + dy)) * CHUNK_SIZE + z;
+      blocks[idx] = BlockType.OAK_LOG;
+    }
+
+    // Leaves (spherical-ish shape)
+    const leafStart = y + trunkHeight - 2;
+    const leafEnd = y + trunkHeight + 2;
+    for (let ly = leafStart; ly <= leafEnd; ly++) {
+      const radius = ly < leafEnd - 1 ? 2 : 1;
+      for (let lx = -radius; lx <= radius; lx++) {
+        for (let lz = -radius; lz <= radius; lz++) {
+          if (Math.abs(lx) === radius && Math.abs(lz) === radius) continue; // Skip corners
+          const bx = x + lx;
+          const bz = z + lz;
+          if (bx < 0 || bx >= CHUNK_SIZE || bz < 0 || bz >= CHUNK_SIZE) continue;
+          if (ly < 0 || ly >= WORLD_HEIGHT) continue;
+          const idx = (bx * WORLD_HEIGHT + ly) * CHUNK_SIZE + bz;
+          if (blocks[idx] === BlockType.AIR) {
+            blocks[idx] = BlockType.OAK_LEAVES;
+          }
+        }
+      }
+    }
+  }
+
+  // Get the ground height at a world coordinate, ignoring trees
+  getSurfaceHeight(x, z) {
+    for (let y = WORLD_HEIGHT - 1; y > 0; y--) {
+      const block = this.getBlock(x, y, z);
+      if (block === BlockType.AIR || block === BlockType.WATER
+          || block === BlockType.OAK_LOG || block === BlockType.OAK_LEAVES) continue;
+      return y;
+    }
+    return SEA_LEVEL;
+  }
+
+  // Place villages that overlap with loaded chunks
+  placeVillagesNear(cx, cz) {
+    const villages = this.villageGen.getVillagesNear(cx, cz, this.seed);
+    for (const village of villages) {
+      const key = `${village.x},${village.z}`;
+      if (this.placedVillages.has(key)) continue;
+
+      // Check that the chunks the village needs are loaded (within ~2 chunk radius of center)
+      const vcx = Math.floor(village.x / CHUNK_SIZE);
+      const vcz = Math.floor(village.z / CHUNK_SIZE);
+      let allLoaded = true;
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+          if (!this.getChunk(vcx + dx, vcz + dz)) {
+            allLoaded = false;
+            break;
+          }
+        }
+        if (!allLoaded) break;
+      }
+      if (!allLoaded) continue;
+
+      this.placedVillages.add(key);
+      this.villageGen.placeVillage(
+        village,
+        (x, z) => this.getSurfaceHeight(x, z),
+        (x, y, z, type) => this._setBlockDirect(x, y, z, type)
+      );
+    }
+  }
+
+  // Set block without marking dirty (used during generation)
+  _setBlockDirect(x, y, z, type) {
+    if (y < 0 || y >= WORLD_HEIGHT) return;
+    const cx = Math.floor(x / CHUNK_SIZE);
+    const cz = Math.floor(z / CHUNK_SIZE);
+    const chunk = this.getChunk(cx, cz);
+    if (!chunk) return;
+    const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    chunk.blocks[(lx * WORLD_HEIGHT + y) * CHUNK_SIZE + lz] = type;
+    chunk.dirty = true;
+  }
+
+  getBlock(x, y, z) {
+    if (y < 0 || y >= WORLD_HEIGHT) return BlockType.AIR;
+    const cx = Math.floor(x / CHUNK_SIZE);
+    const cz = Math.floor(z / CHUNK_SIZE);
+    const chunk = this.getChunk(cx, cz);
+    if (!chunk) return BlockType.AIR;
+    const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    return chunk.blocks[(lx * WORLD_HEIGHT + y) * CHUNK_SIZE + lz];
+  }
+
+  setBlock(x, y, z, type) {
+    if (y < 0 || y >= WORLD_HEIGHT) return;
+    const cx = Math.floor(x / CHUNK_SIZE);
+    const cz = Math.floor(z / CHUNK_SIZE);
+    const chunk = this.getChunk(cx, cz);
+    if (!chunk) return;
+    const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    chunk.blocks[(lx * WORLD_HEIGHT + y) * CHUNK_SIZE + lz] = type;
+    chunk.dirty = true;
+
+    // Mark adjacent chunks dirty if on border
+    if (lx === 0) { const nc = this.getChunk(cx - 1, cz); if (nc) nc.dirty = true; }
+    if (lx === CHUNK_SIZE - 1) { const nc = this.getChunk(cx + 1, cz); if (nc) nc.dirty = true; }
+    if (lz === 0) { const nc = this.getChunk(cx, cz - 1); if (nc) nc.dirty = true; }
+    if (lz === CHUNK_SIZE - 1) { const nc = this.getChunk(cx, cz + 1); if (nc) nc.dirty = true; }
+  }
+
+  isSolid(x, y, z) {
+    const block = this.getBlock(x, y, z);
+    return BlockData[block]?.solid ?? false;
+  }
+
+  isTransparent(x, y, z) {
+    const block = this.getBlock(x, y, z);
+    return BlockData[block]?.transparent ?? true;
+  }
+
+  getSpawnPoint() {
+    // Spawn next to the village on dry land
+    const vp = VillageGenerator.getSpawnVillagePos(this.seed);
+    // Spiral outward from village center to find solid, non-water ground
+    for (let r = 2; r < 40; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
+          if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue; // only perimeter
+          const sx = vp.x + dx;
+          const sz = vp.z + dz;
+          for (let y = WORLD_HEIGHT - 1; y > 0; y--) {
+            const block = this.getBlock(sx, y, sz);
+            if (block === BlockType.AIR || block === BlockType.OAK_LEAVES
+                || block === BlockType.OAK_LOG) continue;
+            if (block === BlockType.WATER) break; // water column, skip this spot
+            // Found solid dry ground
+            return { x: sx + 0.5, y: y + 2.62, z: sz + 0.5 };
+          }
+        }
+      }
+    }
+    return { x: vp.x + 0.5, y: 80, z: vp.z + 0.5 };
+  }
+}

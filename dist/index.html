@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minecraft Clone</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: 'Segoe UI', monospace; }
+    canvas { display: block; }
+
+    #blocker {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100; cursor: pointer;
+    }
+    #blocker .content {
+      text-align: center; color: #fff;
+    }
+    #blocker h1 { font-size: 48px; margin-bottom: 16px; text-shadow: 2px 2px 0 #000; }
+    #blocker p { font-size: 18px; color: #aaa; }
+    #blocker.hidden { display: none; }
+
+    #crosshair {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px; height: 24px;
+      pointer-events: none; z-index: 10;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute; background: #fff;
+      mix-blend-mode: difference;
+    }
+    #crosshair::before { width: 2px; height: 24px; left: 11px; top: 0; }
+    #crosshair::after { width: 24px; height: 2px; top: 11px; left: 0; }
+
+    #hotbar {
+      position: fixed; bottom: 16px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 2px;
+      z-index: 10; pointer-events: none;
+    }
+    .hotbar-slot {
+      width: 52px; height: 52px;
+      border: 2px solid #555;
+      background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    .hotbar-slot.selected { border-color: #fff; border-width: 3px; }
+    .hotbar-slot canvas { width: 36px; height: 36px; image-rendering: pixelated; }
+    .hotbar-slot .key {
+      position: absolute; top: 2px; left: 4px;
+      font-size: 10px; color: #aaa;
+    }
+
+    #debug {
+      position: fixed; top: 8px; left: 8px;
+      color: #fff; font-size: 13px;
+      font-family: monospace; z-index: 10;
+      pointer-events: none; text-shadow: 1px 1px 0 #000;
+      line-height: 1.5;
+    }
+
+    #loading {
+      position: fixed; inset: 0;
+      background: #2c1a0e;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; z-index: 200; color: #fff;
+    }
+    #loading h2 { margin-bottom: 20px; }
+    #loading .bar { width: 300px; height: 20px; background: #1a0f06; border: 2px solid #5a3a1a; }
+    #loading .bar-fill { height: 100%; background: #4a8; width: 0%; transition: width 0.2s; }
+    #loading.hidden { display: none; }
+  </style>
+  <script type="module" crossorigin src="/assets/index-UgBw2VZc.js"></script>
+</head>
+<body>
+  <div id="loading">
+    <h2>Generating World...</h2>
+    <div class="bar"><div class="bar-fill" id="load-progress"></div></div>
+  </div>
+  <div id="blocker">
+    <div class="content">
+      <h1>Minecraft Clone</h1>
+      <p>Click to play</p>
+      <p style="margin-top: 12px; font-size: 14px; color: #888;">
+        WASD - Move &nbsp;|&nbsp; Space - Jump &nbsp;|&nbsp; Shift - Sprint<br>
+        Left Click - Break Block &nbsp;|&nbsp; Right Click - Place Block<br>
+        1-9 - Select Block &nbsp;|&nbsp; Scroll - Change Block
+      </p>
+    </div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="hotbar"></div>
+  <div id="debug"></div>
+</body>
+</html>
