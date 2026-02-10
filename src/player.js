@@ -32,6 +32,7 @@ export class Player {
 
     this.keys = {};
     this.locked = false;
+    this.active = false;
 
     this._setupControls();
   }
@@ -54,6 +55,7 @@ export class Player {
 
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
+      this.active = this.locked;
       if (!this.locked) {
         this.keys = {};
         this.sprinting = false;
@@ -68,7 +70,7 @@ export class Player {
   }
 
   update(dt) {
-    if (!this.locked) return;
+    if (!this.active) return;
 
     // Clamp dt to avoid physics explosion on tab-switch
     dt = Math.min(dt, 0.1);

@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Classic Builder</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { overflow: hidden; background: #000; font-family: 'Segoe UI', monospace; }
-    canvas { display: block; }
+    canvas { display: block; touch-action: none; }
 
     /* Menu overlays */
     .menu-overlay {
@@ -98,9 +98,44 @@
     #loading .bar { width: 300px; height: 20px; background: #1a0f06; border: 2px solid #5a3a1a; }
     #loading .bar-fill { height: 100%; background: #4a8; width: 0%; transition: width 0.2s; }
     #loading.hidden { display: none; }
+
+    /* Hide touch controls when not playing */
+    body:not(.game-active) #touch-controls { display: none !important; }
+
+    /* Mobile overrides */
+    @media (pointer: coarse) {
+      #hotbar { pointer-events: auto; }
+      .hotbar-slot .key { display: none; }
+      .controls-ref { display: none; }
+      #crosshair { display: none; }
+    }
+
+    /* Landscape lock: show overlay when portrait on mobile */
+    #rotate-device {
+      display: none;
+      position: fixed; inset: 0;
+      background: #000; color: #fff;
+      z-index: 9999;
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      font-family: 'Segoe UI', monospace; text-align: center;
+    }
+    #rotate-device .rotate-icon {
+      font-size: 64px; margin-bottom: 16px;
+    }
+    #rotate-device p {
+      font-size: 18px; color: #aaa;
+    }
+    @media (pointer: coarse) and (orientation: portrait) {
+      #rotate-device { display: flex; }
+    }
   </style>
 </head>
 <body>
+  <div id="rotate-device">
+    <div class="rotate-icon">&#x1F4F1;&#x21BB;</div>
+    <p>Rotate your device to landscape</p>
+  </div>
   <div id="loading">
     <h2>Generating World...</h2>
     <div class="bar"><div class="bar-fill" id="load-progress"></div></div>

@@ -7,6 +7,7 @@ import { Interaction } from './interaction.js';
 import { Sky } from './sky.js';
 import { UI } from './ui.js';
 import { Menu } from './menu.js';
+import { TouchControls } from './touch.js';
 
 // ── Configuration ──
 const RENDER_DISTANCE = 8; // chunks in each direction
@@ -148,16 +149,39 @@ async function init() {
   const spawn = world.getSpawnPoint();
   player.spawn(spawn);
 
-  // Show title screen
-  const menu = new Menu(renderer.domElement);
-  menu.setState('title');
-
   // Setup interaction after world is loaded
   const interaction = new Interaction(player, world, scene, () => {
     rebuildDirtyChunks();
   });
 
+  // Show title screen
+  const menu = new Menu(renderer.domElement, player);
+  menu.setState('title');
+
   const ui = new UI(atlas);
+
+  // Touch controls
+  let touchControls = null;
+  if (TouchControls.isTouchDevice()) {
+    touchControls = new TouchControls(player, interaction, renderer.domElement);
+
+    document.addEventListener('game-state-change', (e) => {
+      if (e.detail.state === 'playing') {
+        touchControls.show();
+        // Request fullscreen + lock to landscape
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().then(() => {
+            screen.orientation?.lock?.('landscape').catch(() => {});
+          }).catch(() => {});
+        }
+      } else {
+        touchControls.hide();
+      }
+    });
+
+    renderer.domElement.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    renderer.domElement.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  }
 
   // ── Game Loop ──
   let lastTime = performance.now();
@@ -170,6 +194,7 @@ async function init() {
     lastTime = now;
 
     // Update systems
+    if (touchControls) touchControls.update(dt);
     player.update(dt);
     interaction.update(dt);
     if (world.updateWater(dt)) {

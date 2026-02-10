@@ -1,7 +1,9 @@
 export class Menu {
-  constructor(canvas) {
+  constructor(canvas, player) {
     this.canvas = canvas;
+    this.player = player;
     this.state = 'loading';
+    this.isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
     this.titleScreen = document.getElementById('title-screen');
     this.pauseMenu = document.getElementById('pause-menu');
@@ -20,10 +22,19 @@ export class Menu {
 
     // Pointer lock change: if lock lost while playing, transition to paused
     document.addEventListener('pointerlockchange', () => {
+      if (this.isTouch) return;
       const locked = document.pointerLockElement === this.canvas;
       if (locked && (this.state === 'title' || this.state === 'paused')) {
         this.setState('playing');
       } else if (!locked && this.state === 'playing') {
+        this.setState('paused');
+      }
+    });
+
+    // Touch pause event from touch controls
+    document.addEventListener('touch-pause', () => {
+      if (this.isTouch && this.state === 'playing') {
+        this.player.active = false;
         this.setState('paused');
       }
     });
@@ -55,10 +66,18 @@ export class Menu {
 
     // Toggle HUD visibility
     document.body.classList.toggle('game-active', state === 'playing');
+
+    // Dispatch state change for touch controls
+    document.dispatchEvent(new CustomEvent('game-state-change', { detail: { state } }));
   }
 
   _requestPlayState() {
-    this.canvas.requestPointerLock();
-    // Transition happens in pointerlockchange listener once lock is confirmed
+    if (this.isTouch) {
+      this.player.active = true;
+      this.setState('playing');
+    } else {
+      this.canvas.requestPointerLock();
+      // Transition happens in pointerlockchange listener once lock is confirmed
+    }
   }
 }

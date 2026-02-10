@@ -38,6 +38,11 @@ export class UI {
       ctx.drawImage(this.atlas.canvas, srcX, srcY, srcSize, srcSize, 0, 0, 32, 32);
 
       slot.appendChild(previewCanvas);
+
+      slot.addEventListener('click', () => {
+        document.dispatchEvent(new CustomEvent('hotbar-select', { detail: { slot: i } }));
+      });
+
       hotbar.appendChild(slot);
     });
   }

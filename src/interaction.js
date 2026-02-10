@@ -35,18 +35,23 @@ export class Interaction {
         this._mouseDown = {};
       }
     });
+
+    document.addEventListener('hotbar-select', (e) => {
+      this.selectedSlot = e.detail.slot;
+      this._updateHotbar();
+    });
   }
 
   _setupInput() {
     document.addEventListener('mousedown', (e) => {
-      if (!this.player.locked) return;
+      if (!this.player.active) return;
       this._mouseDown[e.button] = true;
     });
     document.addEventListener('mouseup', (e) => {
       this._mouseDown[e.button] = false;
     });
     document.addEventListener('wheel', (e) => {
-      if (!this.player.locked) return;
+      if (!this.player.active) return;
       if (e.deltaY > 0) {
         this.selectedSlot = (this.selectedSlot + 1) % HOTBAR_BLOCKS.length;
       } else {
@@ -106,7 +111,7 @@ export class Interaction {
   }
 
   update(dt) {
-    if (!this.player.locked) {
+    if (!this.player.active) {
       this.highlight.visible = false;
       return;
     }
