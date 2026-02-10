@@ -1,7 +1,7 @@
 const JOYSTICK_RADIUS = 50;
 const DEAD_ZONE = 0.15;
 const CAMERA_SENSITIVITY = 0.004;
-const SPLIT = 0.5;
+const SPLIT = 0.4; // left 40% = joystick zone, right 60% = camera zone
 
 export class TouchControls {
   static isTouchDevice() {
@@ -33,33 +33,11 @@ export class TouchControls {
       display: 'none',
     });
 
-    // ── Camera look pad (left side) ──
-    const cameraPad = document.createElement('div');
-    cameraPad.id = 'touch-camera-pad';
-    Object.assign(cameraPad.style, {
-      position: 'absolute', left: '30px', bottom: '30px',
-      width: '130px', height: '130px',
-      borderRadius: '50%',
-      background: 'rgba(255,255,255,0.08)',
-      border: '2px solid rgba(255,255,255,0.2)',
-      pointerEvents: 'auto',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    });
-    const cameraIcon = document.createElement('div');
-    Object.assign(cameraIcon.style, {
-      width: '40px', height: '40px',
-      borderRadius: '50%',
-      border: '2px solid rgba(255,255,255,0.25)',
-      background: 'rgba(255,255,255,0.1)',
-    });
-    cameraPad.appendChild(cameraIcon);
-    container.appendChild(cameraPad);
-
-    // ── Movement joystick (right side) ──
+    // ── Movement joystick (left side, always visible) ──
     const joystickBase = document.createElement('div');
     joystickBase.id = 'touch-joystick-base';
     Object.assign(joystickBase.style, {
-      position: 'absolute', right: '30px', bottom: '30px',
+      position: 'absolute', left: '30px', bottom: '30px',
       width: '130px', height: '130px',
       borderRadius: '50%',
       background: 'rgba(255,255,255,0.08)',
@@ -77,37 +55,28 @@ export class TouchControls {
       border: '2px solid rgba(255,255,255,0.5)',
       left: '50%', top: '50%',
       transform: 'translate(-50%, -50%)',
-      transition: 'none',
     });
 
     joystickBase.appendChild(joystickThumb);
     container.appendChild(joystickBase);
 
-    // ── Jump button ──
+    // ── Jump button (right side, bottom) ──
     const btnJump = this._createButton('touch-btn-jump', '&#x25B3;', {
-      position: 'absolute', left: '180px', bottom: '30px',
-      width: '64px', height: '64px', borderRadius: '50%',
-      fontSize: '26px',
+      position: 'absolute', right: '24px', bottom: '30px',
+      width: '72px', height: '72px', borderRadius: '50%',
+      fontSize: '28px',
     });
     container.appendChild(btnJump);
 
-    // ── Break button ──
-    const btnBreak = this._createButton('touch-btn-break', '&#x2692;', {
-      position: 'absolute', left: '180px', bottom: '110px',
-      width: '56px', height: '56px', borderRadius: '50%',
-      fontSize: '20px',
+    // ── Crouch button (right side, above jump) ──
+    const btnCrouch = this._createButton('touch-btn-crouch', '&#x25BD;', {
+      position: 'absolute', right: '24px', bottom: '116px',
+      width: '64px', height: '64px', borderRadius: '50%',
+      fontSize: '24px',
     });
-    container.appendChild(btnBreak);
+    container.appendChild(btnCrouch);
 
-    // ── Place button ──
-    const btnPlace = this._createButton('touch-btn-place', '&#x25A3;', {
-      position: 'absolute', left: '248px', bottom: '64px',
-      width: '56px', height: '56px', borderRadius: '50%',
-      fontSize: '20px',
-    });
-    container.appendChild(btnPlace);
-
-    // ── Pause button ──
+    // ── Pause button (top-right) ──
     const btnPause = this._createButton('touch-btn-pause', '&#x2016;', {
       position: 'absolute', right: '16px', top: '16px',
       width: '44px', height: '44px', borderRadius: '8px',
@@ -118,12 +87,10 @@ export class TouchControls {
     document.body.appendChild(container);
 
     this.container = container;
-    this.cameraPad = cameraPad;
     this.joystickBase = joystickBase;
     this.joystickThumb = joystickThumb;
     this.btnJump = btnJump;
-    this.btnBreak = btnBreak;
-    this.btnPlace = btnPlace;
+    this.btnCrouch = btnCrouch;
     this.btnPause = btnPause;
   }
 
@@ -154,6 +121,11 @@ export class TouchControls {
     return el && el.id && el.id.startsWith('touch-btn');
   }
 
+  _isHotbar(el) {
+    const hotbar = document.getElementById('hotbar');
+    return hotbar && hotbar.contains(el);
+  }
+
   _onTouchStart(e) {
     if (this.container.style.display === 'none') return;
 
@@ -161,7 +133,10 @@ export class TouchControls {
       const el = document.elementFromPoint(touch.clientX, touch.clientY);
       if (!el) continue;
 
-      // Check buttons first
+      // Let hotbar taps pass through
+      if (this._isHotbar(el)) continue;
+
+      // Buttons first
       if (el === this.btnPause || this.btnPause.contains(el)) {
         e.preventDefault();
         document.dispatchEvent(new CustomEvent('touch-pause'));
@@ -173,29 +148,22 @@ export class TouchControls {
         this.player.keys['Space'] = true;
         continue;
       }
-      if (el === this.btnBreak || this.btnBreak.contains(el)) {
+      if (el === this.btnCrouch || this.btnCrouch.contains(el)) {
         e.preventDefault();
-        this.buttonTouches[touch.identifier] = 'break';
-        this.interaction._mouseDown[0] = true;
-        continue;
-      }
-      if (el === this.btnPlace || this.btnPlace.contains(el)) {
-        e.preventDefault();
-        this.buttonTouches[touch.identifier] = 'place';
-        this.interaction._mouseDown[2] = true;
+        this.buttonTouches[touch.identifier] = 'crouch';
+        this.player.keys['ShiftLeft'] = true;
+        this.player.sprinting = false;
         continue;
       }
 
-      // Movement joystick — touch on the joystick base or right half
+      // Movement joystick — touch on joystick or left zone
       if (this.joystickTouch === null) {
-        const jRect = this.joystickBase.getBoundingClientRect();
-        const inJoystick = (el === this.joystickBase || this.joystickBase.contains(el))
-          || (touch.clientX >= window.innerWidth * SPLIT && !this._isButton(el)
-              && touch.clientY > window.innerHeight * 0.5);
-        if (inJoystick) {
+        const onJoystick = el === this.joystickBase || this.joystickBase.contains(el);
+        const inLeftZone = touch.clientX < window.innerWidth * SPLIT && !this._isButton(el);
+        if (onJoystick || inLeftZone) {
           e.preventDefault();
           this.joystickTouch = touch.identifier;
-          // Use center of joystick base as origin
+          const jRect = this.joystickBase.getBoundingClientRect();
           this.joystickOriginX = jRect.left + jRect.width / 2;
           this.joystickOriginY = jRect.top + jRect.height / 2;
           this.joystickDisplacement = { x: 0, y: 0 };
@@ -204,16 +172,12 @@ export class TouchControls {
         }
       }
 
-      // Camera look — touch on camera pad or left half
-      if (this.cameraTouch === null) {
-        const inCamera = (el === this.cameraPad || this.cameraPad.contains(el))
-          || (touch.clientX < window.innerWidth * SPLIT && !this._isButton(el));
-        if (inCamera) {
-          e.preventDefault();
-          this.cameraTouch = touch.identifier;
-          this.lastCameraPos = { x: touch.clientX, y: touch.clientY };
-          continue;
-        }
+      // Camera look — anywhere on right side (not on buttons)
+      if (this.cameraTouch === null && touch.clientX >= window.innerWidth * SPLIT && !this._isButton(el)) {
+        e.preventDefault();
+        this.cameraTouch = touch.identifier;
+        this.lastCameraPos = { x: touch.clientX, y: touch.clientY };
+        continue;
       }
     }
   }
@@ -273,8 +237,7 @@ export class TouchControls {
       const btn = this.buttonTouches[touch.identifier];
       if (btn) {
         if (btn === 'jump') this.player.keys['Space'] = false;
-        if (btn === 'break') this.interaction._mouseDown[0] = false;
-        if (btn === 'place') this.interaction._mouseDown[2] = false;
+        if (btn === 'crouch') this.player.keys['ShiftLeft'] = false;
         delete this.buttonTouches[touch.identifier];
       }
     }
@@ -297,13 +260,18 @@ export class TouchControls {
       this.player.keys['KeyS'] = dy > DEAD_ZONE;
       this.player.keys['KeyA'] = dx < -DEAD_ZONE;
       this.player.keys['KeyD'] = dx > DEAD_ZONE;
-      this.player.sprinting = mag > 0.9;
+      // Auto-sprint when joystick is pushed to the edge
+      if (!this.player.keys['ShiftLeft']) {
+        this.player.sprinting = mag > 0.9;
+      }
     } else {
       this.player.keys['KeyW'] = false;
       this.player.keys['KeyS'] = false;
       this.player.keys['KeyA'] = false;
       this.player.keys['KeyD'] = false;
-      this.player.sprinting = false;
+      if (!this.player.keys['ShiftLeft']) {
+        this.player.sprinting = false;
+      }
     }
   }
 
@@ -327,6 +295,7 @@ export class TouchControls {
     this.player.keys['KeyA'] = false;
     this.player.keys['KeyD'] = false;
     this.player.keys['Space'] = false;
+    this.player.keys['ShiftLeft'] = false;
     this.player.sprinting = false;
     this.interaction._mouseDown[0] = false;
     this.interaction._mouseDown[2] = false;
