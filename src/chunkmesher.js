@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CHUNK_SIZE, WORLD_HEIGHT } from './world.js';
-import { BlockType, BlockData } from './blocks.js';
+import { BlockType, BlockData, isWaterBlock, waterHeight } from './blocks.js';
 
 // Face directions: [dx, dy, dz] and corresponding face index
 const FACES = [
@@ -38,7 +38,7 @@ export class ChunkMesher {
           const blockType = chunk.blocks[(x * WORLD_HEIGHT + y) * CHUNK_SIZE + z];
           if (blockType === BlockType.AIR) continue;
 
-          const isWater = blockType === BlockType.WATER;
+          const isWater = isWaterBlock(blockType);
           const isGlass = blockType === BlockType.GLASS;
           const isTransparent = BlockData[blockType].transparent;
 
@@ -53,10 +53,11 @@ export class ChunkMesher {
 
             if (neighbor === blockType && !isWater) continue;
             if (!isTransparent && !neighborTransparent) continue;
-            if (isWater && neighbor === BlockType.WATER) continue;
+            if (isWater && neighbor === BlockType.WATER && blockType === BlockType.WATER) continue;
+            if (isWater && !neighborTransparent && neighbor !== BlockType.AIR) continue;
             if (isTransparent && !isWater && neighbor === blockType) continue;
 
-            const [u0, v0] = this.atlas.getUV(blockType, face);
+            const [u0, v0] = this.atlas.getUV(isWater ? BlockType.WATER : blockType, face);
             const tileSize = this.atlas.tileSize;
 
             // Pick buffer
@@ -86,9 +87,11 @@ export class ChunkMesher {
               [u0, v0],
             ];
 
+            const wh = isWater ? waterHeight(blockType) : 1;
             const tVertIdx = buf.vi;
             for (let i = 0; i < 4; i++) {
-              buf.pos.push(wx + x + corners[i][0], y + corners[i][1], wz + z + corners[i][2]);
+              const vy = isWater && corners[i][1] === 1 ? wh : corners[i][1];
+              buf.pos.push(wx + x + corners[i][0], y + vy, wz + z + corners[i][2]);
               buf.norm.push(dir[0], dir[1], dir[2]);
               buf.uv.push(uvCorners[i][0], uvCorners[i][1]);
               const ao = aoValues[i] / 3;

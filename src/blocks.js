@@ -18,6 +18,9 @@ export const BlockType = {
   SNOW: 14,
   GLASS: 15,
   BRICK: 16,
+  WATER_25: 17,
+  WATER_50: 18,
+  WATER_75: 19,
 };
 
 // Block properties
@@ -39,7 +42,24 @@ export const BlockData = {
   [BlockType.SNOW]:        { name: 'Snow',        solid: true,  transparent: false },
   [BlockType.GLASS]:       { name: 'Glass',       solid: true,  transparent: true  },
   [BlockType.BRICK]:       { name: 'Brick',       solid: true,  transparent: false },
+  [BlockType.WATER_25]:    { name: 'Water',       solid: false, transparent: true  },
+  [BlockType.WATER_50]:    { name: 'Water',       solid: false, transparent: true  },
+  [BlockType.WATER_75]:    { name: 'Water',       solid: false, transparent: true  },
 };
+
+export function isWaterBlock(type) {
+  return type === BlockType.WATER || type === BlockType.WATER_25 ||
+         type === BlockType.WATER_50 || type === BlockType.WATER_75;
+}
+
+export function waterHeight(type) {
+  switch (type) {
+    case BlockType.WATER_25: return 0.25;
+    case BlockType.WATER_50: return 0.5;
+    case BlockType.WATER_75: return 0.75;
+    default: return 1.0;
+  }
+}
 
 // Hotbar blocks the player can place
 export const HOTBAR_BLOCKS = [

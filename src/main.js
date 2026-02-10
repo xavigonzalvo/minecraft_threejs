@@ -6,6 +6,7 @@ import { Player } from './player.js';
 import { Interaction } from './interaction.js';
 import { Sky } from './sky.js';
 import { UI } from './ui.js';
+import { Menu } from './menu.js';
 
 // ── Configuration ──
 const RENDER_DISTANCE = 8; // chunks in each direction
@@ -138,14 +139,18 @@ async function init() {
   // Place villages in the initial loaded area
   world.placeVillagesNear(0, 0);
 
+  // Fill any air gaps adjacent to water bodies
+  world.seedInitialWaterFlow();
+
   rebuildDirtyChunks();
 
   // Spawn player
   const spawn = world.getSpawnPoint();
   player.spawn(spawn);
 
-  // Hide loading screen
-  loadingEl.classList.add('hidden');
+  // Show title screen
+  const menu = new Menu(renderer.domElement);
+  menu.setState('title');
 
   // Setup interaction after world is loaded
   const interaction = new Interaction(player, world, scene, () => {
@@ -167,6 +172,9 @@ async function init() {
     // Update systems
     player.update(dt);
     interaction.update(dt);
+    if (world.updateWater(dt)) {
+      rebuildDirtyChunks();
+    }
     sky.update(dt, player.position);
     ui.update(dt, player, world, loadedChunks.size);
 

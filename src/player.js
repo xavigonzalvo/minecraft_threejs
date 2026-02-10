@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BlockType } from './blocks.js';
+import { BlockType, isWaterBlock } from './blocks.js';
 
 const GRAVITY = -52;
 const JUMP_SPEED = 13;
@@ -52,18 +52,12 @@ export class Player {
       this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
     });
 
-    const blocker = document.getElementById('blocker');
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
-      if (this.locked) {
-        blocker.classList.add('hidden');
-      } else {
-        blocker.classList.remove('hidden');
+      if (!this.locked) {
+        this.keys = {};
+        this.sprinting = false;
       }
-    });
-
-    blocker.addEventListener('click', () => {
-      this.canvas.requestPointerLock();
     });
   }
 
@@ -84,9 +78,9 @@ export class Player {
     const headBlockY = Math.floor(this.position.y - 0.1);
     const blockX = Math.floor(this.position.x);
     const blockZ = Math.floor(this.position.z);
-    this.inWater = this.world.getBlock(blockX, feetBlockY, blockZ) === BlockType.WATER
-                || this.world.getBlock(blockX, feetBlockY + 1, blockZ) === BlockType.WATER;
-    this.headInWater = this.world.getBlock(blockX, headBlockY, blockZ) === BlockType.WATER;
+    this.inWater = isWaterBlock(this.world.getBlock(blockX, feetBlockY, blockZ))
+                || isWaterBlock(this.world.getBlock(blockX, feetBlockY + 1, blockZ));
+    this.headInWater = isWaterBlock(this.world.getBlock(blockX, headBlockY, blockZ));
 
     const speed = this.inWater ? SWIM_SPEED : (this.sprinting ? SPRINT_SPEED : WALK_SPEED);
 

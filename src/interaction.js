@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BlockType, BlockData, HOTBAR_BLOCKS } from './blocks.js';
+import { BlockType, BlockData, HOTBAR_BLOCKS, isWaterBlock } from './blocks.js';
 
 const REACH = 6;
 const RAY_STEP = 0.02;
@@ -29,6 +29,12 @@ export class Interaction {
 
     this._mouseDown = {};
     this._setupInput();
+
+    document.addEventListener('pointerlockchange', () => {
+      if (!document.pointerLockElement) {
+        this._mouseDown = {};
+      }
+    });
   }
 
   _setupInput() {
@@ -82,7 +88,7 @@ export class Interaction {
       if (bx === prevX && by === prevY && bz === prevZ) continue;
 
       const block = this.world.getBlock(bx, by, bz);
-      if (block !== BlockType.AIR && block !== BlockType.WATER) {
+      if (block !== BlockType.AIR && !isWaterBlock(block)) {
         return {
           hit: true,
           x: bx, y: by, z: bz,
@@ -100,6 +106,11 @@ export class Interaction {
   }
 
   update(dt) {
+    if (!this.player.locked) {
+      this.highlight.visible = false;
+      return;
+    }
+
     this.breakCooldown = Math.max(0, this.breakCooldown - dt);
     this.placeCooldown = Math.max(0, this.placeCooldown - dt);
 
@@ -113,6 +124,7 @@ export class Interaction {
       if (this._mouseDown[0] && this.breakCooldown <= 0) {
         if (ray.blockType !== BlockType.BEDROCK) {
           this.world.setBlock(ray.x, ray.y, ray.z, BlockType.AIR);
+          this.world.flowWater(ray.x, ray.y, ray.z);
           this.onBlockChange();
           this.breakCooldown = 0.25;
         }

@@ -1,5 +1,5 @@
 import { SimplexNoise } from './noise.js';
-import { BlockType, BlockData } from './blocks.js';
+import { BlockType, BlockData, isWaterBlock } from './blocks.js';
 import { VillageGenerator } from './village.js';
 
 export const CHUNK_SIZE = 16;
@@ -16,6 +16,10 @@ export class World {
     this.treeNoise = new SimplexNoise(seed * 17 + 11);
     this.villageGen = new VillageGenerator(seed);
     this.placedVillages = new Set(); // track which villages have been placed
+    this._waterQueue = [];
+    this._waterVisited = new Set();
+    this._waterTimer = 0;
+    this._waterUpdates = 0;
   }
 
   chunkKey(cx, cz) {
@@ -162,7 +166,7 @@ export class World {
   getSurfaceHeight(x, z) {
     for (let y = WORLD_HEIGHT - 1; y > 0; y--) {
       const block = this.getBlock(x, y, z);
-      if (block === BlockType.AIR || block === BlockType.WATER
+      if (block === BlockType.AIR || isWaterBlock(block)
           || block === BlockType.OAK_LOG || block === BlockType.OAK_LEAVES) continue;
       return y;
     }
@@ -242,6 +246,154 @@ export class World {
     if (lz === CHUNK_SIZE - 1) { const nc = this.getChunk(cx, cz + 1); if (nc) nc.dirty = true; }
   }
 
+  flowWater(x, y, z) {
+    const key = `${x},${y},${z}`;
+    if (this._waterVisited.has(key)) return;
+    this._waterVisited.add(key);
+    this._waterQueue.push([x, y, z, 0]);
+  }
+
+  static _WATER_LEVELS = [BlockType.WATER_25, BlockType.WATER_50, BlockType.WATER_75, BlockType.WATER];
+
+  updateWater(dt) {
+    if (this._waterQueue.length === 0) return false;
+
+    this._waterTimer += dt;
+    if (this._waterTimer < 0.15) return false;
+    this._waterTimer = 0;
+
+    // Pop entries until we advance one block or exhaust the queue
+    while (this._waterQueue.length > 0 && this._waterUpdates < 200) {
+      const [bx, by, bz, hDist] = this._waterQueue.shift();
+      const current = this.getBlock(bx, by, bz);
+
+      // Determine next water level for this block
+      const levels = World._WATER_LEVELS;
+      let levelIdx = levels.indexOf(current);
+      if (levelIdx === -1) {
+        // Block is AIR — start at level 0 (WATER_25)
+        if (current !== BlockType.AIR) continue;
+        levelIdx = -1;
+      }
+
+      // Already full water — nothing to do
+      if (current === BlockType.WATER) continue;
+
+      // Check if any neighbor (above + 4 horizontal) is water source
+      const hasWaterNeighbor =
+        isWaterBlock(this.getBlock(bx, by + 1, bz)) ||
+        isWaterBlock(this.getBlock(bx + 1, by, bz)) ||
+        isWaterBlock(this.getBlock(bx - 1, by, bz)) ||
+        isWaterBlock(this.getBlock(bx, by, bz + 1)) ||
+        isWaterBlock(this.getBlock(bx, by, bz - 1));
+
+      if (!hasWaterNeighbor) continue;
+
+      // If water is directly above, fill instantly (gravity)
+      const waterAbove = isWaterBlock(this.getBlock(bx, by + 1, bz));
+      const nextLevel = waterAbove ? BlockType.WATER : levels[levelIdx + 1];
+      this.setBlock(bx, by, bz, nextLevel);
+      this._waterUpdates++;
+
+      if (nextLevel !== BlockType.WATER) {
+        // Not yet full — re-enqueue to keep filling
+        this._waterQueue.push([bx, by, bz, hDist]);
+      } else {
+        // Reached full water — spread to neighbors
+        const belowKey = `${bx},${by - 1},${bz}`;
+        if (!this._waterVisited.has(belowKey)) {
+          this._waterVisited.add(belowKey);
+          this._waterQueue.push([bx, by - 1, bz, 0]);
+        }
+
+        if (hDist < 7) {
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nk = `${bx + dx},${by},${bz + dz}`;
+            if (!this._waterVisited.has(nk)) {
+              this._waterVisited.add(nk);
+              this._waterQueue.push([bx + dx, by, bz + dz, hDist + 1]);
+            }
+          }
+        }
+      }
+
+      return true; // one level change, let caller rebuild
+    }
+
+    // Queue empty or cap reached — reset state
+    if (this._waterQueue.length === 0 || this._waterUpdates >= 200) {
+      this._waterQueue = [];
+      this._waterVisited = new Set();
+      this._waterUpdates = 0;
+    }
+
+    return false;
+  }
+
+  // Run once after world generation to fill air gaps adjacent to water
+  seedInitialWaterFlow() {
+    const queue = [];
+    const visited = new Set();
+
+    // Scan all chunks for water blocks with air horizontal/below
+    for (const chunk of this.chunks.values()) {
+      const wx = chunk.cx * CHUNK_SIZE;
+      const wz = chunk.cz * CHUNK_SIZE;
+      for (let x = 0; x < CHUNK_SIZE; x++) {
+        for (let z = 0; z < CHUNK_SIZE; z++) {
+          for (let y = 0; y < WORLD_HEIGHT; y++) {
+            if (chunk.blocks[(x * WORLD_HEIGHT + y) * CHUNK_SIZE + z] !== BlockType.WATER) continue;
+            const worldX = wx + x;
+            const worldZ = wz + z;
+            for (const [dx, dy, dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]]) {
+              const nx = worldX + dx;
+              const ny = y + dy;
+              const nz = worldZ + dz;
+              const key = `${nx},${ny},${nz}`;
+              if (!visited.has(key) && this.getBlock(nx, ny, nz) === BlockType.AIR) {
+                visited.add(key);
+                queue.push([nx, ny, nz, dy === 0 ? 1 : 0]);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Synchronous BFS fill
+    while (queue.length > 0) {
+      const [bx, by, bz, hDist] = queue.shift();
+      if (this.getBlock(bx, by, bz) !== BlockType.AIR) continue;
+
+      const hasWaterNeighbor =
+        isWaterBlock(this.getBlock(bx, by + 1, bz)) ||
+        isWaterBlock(this.getBlock(bx + 1, by, bz)) ||
+        isWaterBlock(this.getBlock(bx - 1, by, bz)) ||
+        isWaterBlock(this.getBlock(bx, by, bz + 1)) ||
+        isWaterBlock(this.getBlock(bx, by, bz - 1));
+
+      if (!hasWaterNeighbor) continue;
+
+      this.setBlock(bx, by, bz, BlockType.WATER);
+
+      const belowKey = `${bx},${by - 1},${bz}`;
+      if (!visited.has(belowKey)) {
+        visited.add(belowKey);
+        queue.push([bx, by - 1, bz, 0]);
+      }
+
+      if (hDist < 7) {
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nk = `${bx + dx},${by},${bz + dz}`;
+          if (!visited.has(nk)) {
+            visited.add(nk);
+            queue.push([bx + dx, by, bz + dz, hDist + 1]);
+          }
+        }
+      }
+    }
+  }
+
   isSolid(x, y, z) {
     const block = this.getBlock(x, y, z);
     return BlockData[block]?.solid ?? false;
@@ -266,7 +418,7 @@ export class World {
             const block = this.getBlock(sx, y, sz);
             if (block === BlockType.AIR || block === BlockType.OAK_LEAVES
                 || block === BlockType.OAK_LOG) continue;
-            if (block === BlockType.WATER) break; // water column, skip this spot
+            if (isWaterBlock(block)) break; // water column, skip this spot
             // Found solid dry ground
             return { x: sx + 0.5, y: y + 2.62, z: sz + 0.5 };
           }
