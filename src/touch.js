@@ -1,7 +1,9 @@
 const JOYSTICK_RADIUS = 50;
 const DEAD_ZONE = 0.15;
 const CAMERA_SENSITIVITY = 0.004;
-const SPLIT = 0.4; // left 40% = joystick zone, right 60% = camera zone
+const SPLIT = 0.4;
+const TAP_MAX_DIST = 12;    // px — finger drift allowed for a tap/hold
+const HOLD_DELAY = 400;     // ms — how long before hold starts breaking
 
 export class TouchControls {
   static isTouchDevice() {
@@ -18,6 +20,12 @@ export class TouchControls {
     this.buttonTouches = {};
     this.joystickDisplacement = { x: 0, y: 0 };
     this.lastCameraPos = { x: 0, y: 0 };
+
+    // Camera touch tracking for tap/hold detection
+    this.cameraTouchStart = { x: 0, y: 0, time: 0 };
+    this.cameraMoved = false;
+    this.holdTimer = null;
+    this.isBreaking = false;
 
     this._buildDOM();
     this._bindEvents();
@@ -126,6 +134,23 @@ export class TouchControls {
     return hotbar && hotbar.contains(el);
   }
 
+  _startHoldTimer() {
+    this._clearHoldTimer();
+    this.holdTimer = setTimeout(() => {
+      if (!this.cameraMoved) {
+        this.isBreaking = true;
+        this.interaction._mouseDown[0] = true;
+      }
+    }, HOLD_DELAY);
+  }
+
+  _clearHoldTimer() {
+    if (this.holdTimer !== null) {
+      clearTimeout(this.holdTimer);
+      this.holdTimer = null;
+    }
+  }
+
   _onTouchStart(e) {
     if (this.container.style.display === 'none') return;
 
@@ -177,6 +202,10 @@ export class TouchControls {
         e.preventDefault();
         this.cameraTouch = touch.identifier;
         this.lastCameraPos = { x: touch.clientX, y: touch.clientY };
+        this.cameraTouchStart = { x: touch.clientX, y: touch.clientY, time: performance.now() };
+        this.cameraMoved = false;
+        this.isBreaking = false;
+        this._startHoldTimer();
         continue;
       }
     }
@@ -208,6 +237,21 @@ export class TouchControls {
         this.player.pitch -= dy * CAMERA_SENSITIVITY;
         this.player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.player.pitch));
         this.lastCameraPos = { x: touch.clientX, y: touch.clientY };
+
+        // Check if finger moved too far for tap/hold
+        if (!this.cameraMoved) {
+          const totalDx = touch.clientX - this.cameraTouchStart.x;
+          const totalDy = touch.clientY - this.cameraTouchStart.y;
+          if (Math.sqrt(totalDx * totalDx + totalDy * totalDy) > TAP_MAX_DIST) {
+            this.cameraMoved = true;
+            this._clearHoldTimer();
+            // If already breaking, stop
+            if (this.isBreaking) {
+              this.interaction._mouseDown[0] = false;
+              this.isBreaking = false;
+            }
+          }
+        }
         continue;
       }
     }
@@ -230,6 +274,26 @@ export class TouchControls {
       }
 
       if (touch.identifier === this.cameraTouch) {
+        this._clearHoldTimer();
+
+        // Stop breaking if it was active
+        if (this.isBreaking) {
+          this.interaction._mouseDown[0] = false;
+          this.isBreaking = false;
+        }
+
+        // Tap to place: short touch without much movement
+        if (!this.cameraMoved) {
+          const elapsed = performance.now() - this.cameraTouchStart.time;
+          if (elapsed < HOLD_DELAY) {
+            // Quick tap → place block
+            this.interaction._mouseDown[2] = true;
+            requestAnimationFrame(() => {
+              this.interaction._mouseDown[2] = false;
+            });
+          }
+        }
+
         this.cameraTouch = null;
         continue;
       }
@@ -260,7 +324,6 @@ export class TouchControls {
       this.player.keys['KeyS'] = dy > DEAD_ZONE;
       this.player.keys['KeyA'] = dx < -DEAD_ZONE;
       this.player.keys['KeyD'] = dx > DEAD_ZONE;
-      // Auto-sprint when joystick is pushed to the edge
       if (!this.player.keys['ShiftLeft']) {
         this.player.sprinting = mag > 0.9;
       }
@@ -290,6 +353,11 @@ export class TouchControls {
     this.buttonTouches = {};
     this.joystickDisplacement = { x: 0, y: 0 };
     this._updateJoystickThumb(0, 0);
+    this._clearHoldTimer();
+    if (this.isBreaking) {
+      this.interaction._mouseDown[0] = false;
+      this.isBreaking = false;
+    }
     this.player.keys['KeyW'] = false;
     this.player.keys['KeyS'] = false;
     this.player.keys['KeyA'] = false;
