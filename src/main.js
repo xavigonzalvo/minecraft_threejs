@@ -33,7 +33,7 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 // ── Initialize Systems ──
 const atlas = new TextureAtlas();
 const world = new World(SEED);
-const mesher = new ChunkMesher(world, atlas);
+let mesher;
 const player = new Player(camera, world, renderer.domElement);
 const sky = new Sky(scene);
 
@@ -106,6 +106,10 @@ function loadChunksAroundPlayer() {
 async function init() {
   const loadingEl = document.getElementById('loading');
   const progressEl = document.getElementById('load-progress');
+
+  // Load textures from PNG files
+  await atlas.load();
+  mesher = new ChunkMesher(world, atlas);
 
   // Generate initial chunks with loading progress
   const initialRadius = 5;

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { BlockType } from './blocks.js';
 
-const GRAVITY = -32;
-const JUMP_SPEED = 12;
+const GRAVITY = -52;
+const JUMP_SPEED = 13;
 const WALK_SPEED = 4.3;
 const SPRINT_SPEED = 7;
 const SWIM_SPEED = 3.0;
@@ -143,10 +143,16 @@ export class Player {
     this._moveAxis(0, this.velocity.x * dt);
     this._moveAxis(2, this.velocity.z * dt);
 
-    // Update camera with smooth Y interpolation for step-ups
+    // Update camera: smooth only upward step-ups, snap instantly on falls/landings
     const targetCamY = this.position.y + PLAYER_EYE_HEIGHT - PLAYER_HEIGHT;
-    const lerpSpeed = 15;
-    this.smoothCameraY += (targetCamY - this.smoothCameraY) * Math.min(1, lerpSpeed * dt);
+    if (targetCamY < this.smoothCameraY) {
+      // Falling or landing: snap camera instantly for a sharp feel
+      this.smoothCameraY = targetCamY;
+    } else {
+      // Stepping up: smooth interpolation
+      const lerpSpeed = 15;
+      this.smoothCameraY += (targetCamY - this.smoothCameraY) * Math.min(1, lerpSpeed * dt);
+    }
     this.camera.position.set(this.position.x, this.smoothCameraY, this.position.z);
 
     // Camera rotation
