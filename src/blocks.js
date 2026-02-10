@@ -77,7 +77,7 @@ export const HOTBAR_BLOCKS = [
 const TEX_SIZE = 16;
 
 // Texture file mapping: blockType -> { top/bottom/side/all: filename (without .png) }
-const TEXTURE_FILES = {
+export const TEXTURE_FILES = {
   [BlockType.GRASS]:       { top: 'grass_top', bottom: 'dirt', side: 'grass_side' },
   [BlockType.DIRT]:        { all: 'dirt' },
   [BlockType.STONE]:       { all: 'stone' },

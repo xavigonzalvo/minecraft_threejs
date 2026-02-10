@@ -8,6 +8,7 @@ import { Sky } from './sky.js';
 import { UI } from './ui.js';
 import { Menu } from './menu.js';
 import { TouchControls } from './touch.js';
+import { TextureEditor } from './texture-editor.js';
 
 // ── Configuration ──
 const RENDER_DISTANCE = 8; // chunks in each direction
@@ -112,6 +113,13 @@ async function init() {
   // Load textures from PNG files
   await atlas.load();
   mesher = new ChunkMesher(world, atlas);
+
+  // Texture editor overlay
+  const textureEditor = new TextureEditor(atlas, () => {
+    // Mark all loaded chunks dirty so they re-mesh with updated atlas
+    for (const [, chunk] of world.chunks) chunk.dirty = true;
+    rebuildDirtyChunks();
+  });
 
   // Generate initial chunks with loading progress
   const initialRadius = 5;
