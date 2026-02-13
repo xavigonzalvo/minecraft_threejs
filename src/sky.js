@@ -4,6 +4,7 @@ export class Sky {
   constructor(scene) {
     this.scene = scene;
     this.time = 0.3; // Start at morning (0-1 cycle)
+    this.alwaysDay = false;
 
     // Sky dome
     const skyGeo = new THREE.SphereGeometry(500, 32, 32);
@@ -71,10 +72,12 @@ export class Sky {
   }
 
   update(dt, playerPos) {
-    this.time += dt * 0.01; // Slow day/night cycle
-    if (this.time > 1) this.time -= 1;
+    if (!this.alwaysDay) {
+      this.time += dt * 0.01; // Slow day/night cycle
+      if (this.time > 1) this.time -= 1;
+    }
 
-    const sunAngle = this.time * Math.PI * 2;
+    const sunAngle = this.alwaysDay ? Math.PI / 2 : this.time * Math.PI * 2;
     const sunY = Math.sin(sunAngle) * 300;
     const sunX = Math.cos(sunAngle) * 300;
 

@@ -166,6 +166,16 @@ async function init() {
   const menu = new Menu(renderer.domElement, player);
   menu.setState('title');
 
+  // Day/night toggle
+  const btnDayNight = document.getElementById('btn-daynight');
+  sky.alwaysDay = localStorage.getItem('alwaysDay') === 'true';
+  btnDayNight.textContent = sky.alwaysDay ? 'Always Day: ON' : 'Always Day: OFF';
+  btnDayNight.addEventListener('click', () => {
+    sky.alwaysDay = !sky.alwaysDay;
+    btnDayNight.textContent = sky.alwaysDay ? 'Always Day: ON' : 'Always Day: OFF';
+    localStorage.setItem('alwaysDay', sky.alwaysDay);
+  });
+
   const ui = new UI(atlas);
 
   // Touch controls
