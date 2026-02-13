@@ -2,12 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Classic Builder</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#88bbff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icon.svg">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { overflow: hidden; background: #000; font-family: 'Segoe UI', monospace; }
-    canvas { display: block; }
+    canvas { display: block; touch-action: none; }
 
     /* Menu overlays */
     .menu-overlay {
@@ -98,10 +103,159 @@
     #loading .bar { width: 300px; height: 20px; background: #1a0f06; border: 2px solid #5a3a1a; }
     #loading .bar-fill { height: 100%; background: #4a8; width: 0%; transition: width 0.2s; }
     #loading.hidden { display: none; }
+
+    /* Hide touch controls when not playing */
+    body:not(.game-active) #touch-controls { display: none !important; }
+
+    /* Mobile overrides */
+    @media (pointer: coarse) {
+      #hotbar { pointer-events: auto; }
+      .hotbar-slot .key { display: none; }
+      .controls-ref { display: none; }
+      #crosshair { display: none; }
+    }
+
+    /* Landscape lock: show overlay when portrait on mobile */
+    #rotate-device {
+      display: none;
+      position: fixed; inset: 0;
+      background: #000; color: #fff;
+      z-index: 9999;
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      font-family: 'Segoe UI', monospace; text-align: center;
+    }
+    #rotate-device .rotate-icon {
+      font-size: 64px; margin-bottom: 16px;
+    }
+    #rotate-device p {
+      font-size: 18px; color: #aaa;
+    }
+    @media (pointer: coarse) and (orientation: portrait) {
+      #rotate-device { display: flex; }
+    }
+
+    /* ── Texture Editor Overlay ── */
+    #texture-editor-overlay {
+      position: fixed; inset: 0;
+      z-index: 500;
+      display: none;
+      flex-direction: row;
+      background: #1a1a2e;
+      font-family: 'Segoe UI', monospace;
+      color: #ddd;
+    }
+
+    .te-sidebar {
+      width: 200px;
+      background: #16213e;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #333;
+      overflow: hidden;
+    }
+    .te-sidebar-header {
+      padding: 12px 14px;
+      font-size: 14px;
+      font-weight: bold;
+      color: #aaa;
+      border-bottom: 1px solid #333;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .te-file-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .te-file-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      border-bottom: 1px solid #1a1a2e;
+    }
+    .te-file-item:hover { background: #1a1a3e; }
+    .te-file-item.active { background: #0f3460; }
+    .te-thumb {
+      width: 24px; height: 24px;
+      image-rendering: pixelated;
+      border: 1px solid #333;
+      flex-shrink: 0;
+    }
+
+    .te-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .te-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      background: #0f3460;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+    }
+    .te-tool-btn {
+      background: #16213e;
+      color: #ddd;
+      border: 1px solid #333;
+      padding: 6px 10px;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 3px;
+      font-family: inherit;
+    }
+    .te-tool-btn:hover { background: #1a1a3e; }
+    .te-tool-btn.active {
+      background: #e94560;
+      color: #fff;
+      border-color: #e94560;
+    }
+    .te-save-btn { background: #2a6041; border-color: #2a6041; }
+    .te-save-btn:hover { background: #348a57; }
+    .te-close-btn { background: #5a1a2e; border-color: #5a1a2e; font-weight: bold; }
+    .te-close-btn:hover { background: #7a2a3e; }
+    .te-sep {
+      width: 1px; height: 24px;
+      background: #333;
+      margin: 0 4px;
+    }
+    .te-color-input {
+      width: 32px; height: 28px;
+      border: 1px solid #333;
+      border-radius: 3px;
+      padding: 0;
+      cursor: pointer;
+      background: none;
+    }
+
+    .te-canvas-container {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      background: #111;
+    }
+    .te-display-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
   </style>
-  <script type="module" crossorigin src="/assets/index-BUh4Y3I4.js"></script>
+  <script type="module" crossorigin src="/assets/index-CItDuAS9.js"></script>
 </head>
 <body>
+  <div id="rotate-device">
+    <div class="rotate-icon">&#x1F4F1;&#x21BB;</div>
+    <p>Rotate your device to landscape</p>
+  </div>
   <div id="loading">
     <h2>Generating World...</h2>
     <div class="bar"><div class="bar-fill" id="load-progress"></div></div>
@@ -118,10 +272,17 @@
   <div id="pause-menu" class="menu-overlay hidden">
     <h2>Game Paused</h2>
     <button id="btn-resume" class="menu-btn">Resume</button>
+    <button id="btn-edit-textures" class="menu-btn">Texture Editor</button>
     <button id="btn-back-to-title" class="menu-btn">Back to Title</button>
   </div>
   <div id="crosshair"></div>
   <div id="hotbar"></div>
   <div id="debug"></div>
+  <div id="texture-editor-overlay"></div>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js');
+    }
+  </script>
 </body>
 </html>

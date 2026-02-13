@@ -13,6 +13,8 @@ export class Interaction {
     this.selectedSlot = 0;
     this.breakCooldown = 0;
     this.placeCooldown = 0;
+    this.isTouch = false;
+    this._touchScreenPos = null;
 
     // Block highlight wireframe
     const hlGeo = new THREE.BoxGeometry(1.005, 1.005, 1.005);
@@ -74,11 +76,8 @@ export class Interaction {
     });
   }
 
-  // DDA-like raycast to find block
-  raycast() {
-    const origin = this.player.camera.position.clone();
-    const dir = this.player.getForwardDirection();
-
+  // DDA-like raycast along a ray
+  _raycastRay(origin, dir) {
     let prevX = -999, prevY = -999, prevZ = -999;
 
     for (let t = 0; t < REACH; t += RAY_STEP) {
@@ -97,7 +96,7 @@ export class Interaction {
         return {
           hit: true,
           x: bx, y: by, z: bz,
-          prevX: prevX, prevY: prevY, prevZ: prevZ,
+          prevX, prevY, prevZ,
           blockType: block,
         };
       }
@@ -110,6 +109,23 @@ export class Interaction {
     return { hit: false };
   }
 
+  // Raycast from camera center (desktop)
+  raycast() {
+    const origin = this.player.camera.position.clone();
+    const dir = this.player.getForwardDirection();
+    return this._raycastRay(origin, dir);
+  }
+
+  // Raycast from a screen position (touch)
+  raycastFromScreen(screenX, screenY) {
+    const ndcX = (screenX / window.innerWidth) * 2 - 1;
+    const ndcY = -(screenY / window.innerHeight) * 2 + 1;
+    const origin = this.player.camera.position.clone();
+    const far = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(this.player.camera);
+    const dir = far.sub(origin).normalize();
+    return this._raycastRay(origin, dir);
+  }
+
   update(dt) {
     if (!this.player.active) {
       this.highlight.visible = false;
@@ -119,7 +135,15 @@ export class Interaction {
     this.breakCooldown = Math.max(0, this.breakCooldown - dt);
     this.placeCooldown = Math.max(0, this.placeCooldown - dt);
 
-    const ray = this.raycast();
+    // On touch devices, only raycast when there's an active touch target
+    if (this.isTouch && !this._touchScreenPos) {
+      this.highlight.visible = false;
+      return;
+    }
+
+    const ray = this._touchScreenPos
+      ? this.raycastFromScreen(this._touchScreenPos.x, this._touchScreenPos.y)
+      : this.raycast();
 
     if (ray.hit) {
       this.highlight.position.set(ray.x + 0.5, ray.y + 0.5, ray.z + 0.5);
@@ -153,6 +177,22 @@ export class Interaction {
       }
     } else {
       this.highlight.visible = false;
+    }
+  }
+
+  placeBlockAtScreen(screenX, screenY) {
+    if (this.placeCooldown > 0) return;
+    const ray = this.raycastFromScreen(screenX, screenY);
+    if (!ray.hit || ray.prevX === -999) return;
+    const placeType = HOTBAR_BLOCKS[this.selectedSlot];
+    const px = Math.floor(this.player.position.x);
+    const py1 = Math.floor(this.player.position.y - 1.62);
+    const py2 = Math.floor(this.player.position.y);
+    const pz = Math.floor(this.player.position.z);
+    if (!(ray.prevX === px && ray.prevZ === pz && (ray.prevY === py1 || ray.prevY === py2))) {
+      this.world.setBlock(ray.prevX, ray.prevY, ray.prevZ, placeType);
+      this.onBlockChange();
+      this.placeCooldown = 0.25;
     }
   }
 

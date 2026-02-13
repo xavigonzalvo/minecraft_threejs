@@ -27,6 +27,8 @@ export class TouchControls {
     this.holdTimer = null;
     this.isBreaking = false;
 
+    this.interaction.isTouch = true;
+
     this._buildDOM();
     this._bindEvents();
     this.hide();
@@ -205,6 +207,7 @@ export class TouchControls {
         this.cameraTouchStart = { x: touch.clientX, y: touch.clientY, time: performance.now() };
         this.cameraMoved = false;
         this.isBreaking = false;
+        this.interaction._touchScreenPos = { x: touch.clientX, y: touch.clientY };
         this._startHoldTimer();
         continue;
       }
@@ -245,6 +248,7 @@ export class TouchControls {
           if (Math.sqrt(totalDx * totalDx + totalDy * totalDy) > TAP_MAX_DIST) {
             this.cameraMoved = true;
             this._clearHoldTimer();
+            this.interaction._touchScreenPos = null;
             // If already breaking, stop
             if (this.isBreaking) {
               this.interaction._mouseDown[0] = false;
@@ -286,14 +290,12 @@ export class TouchControls {
         if (!this.cameraMoved) {
           const elapsed = performance.now() - this.cameraTouchStart.time;
           if (elapsed < HOLD_DELAY) {
-            // Quick tap → place block
-            this.interaction._mouseDown[2] = true;
-            requestAnimationFrame(() => {
-              this.interaction._mouseDown[2] = false;
-            });
+            // Quick tap → place block at finger position
+            this.interaction.placeBlockAtScreen(this.cameraTouchStart.x, this.cameraTouchStart.y);
           }
         }
 
+        this.interaction._touchScreenPos = null;
         this.cameraTouch = null;
         continue;
       }
@@ -358,6 +360,7 @@ export class TouchControls {
       this.interaction._mouseDown[0] = false;
       this.isBreaking = false;
     }
+    this.interaction._touchScreenPos = null;
     this.player.keys['KeyW'] = false;
     this.player.keys['KeyS'] = false;
     this.player.keys['KeyA'] = false;
