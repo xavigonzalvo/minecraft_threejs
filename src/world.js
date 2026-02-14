@@ -51,7 +51,17 @@ export class World {
         const erosion = this.noise.fbm2D(worldX * 0.004, worldZ * 0.004, 6, 2, 0.5);
         const detail = this.noise2.fbm2D(worldX * 0.02, worldZ * 0.02, 3, 2, 0.45);
 
-        let height = SEA_LEVEL + continentalness * 12 + erosion * 6 + detail * 3;
+        // Asymmetric continental contribution: full strength above sea level,
+        // but weak below to prevent vast ocean basins (scale 0.001 = ~1000 block features)
+        const cContrib = continentalness > 0 ? continentalness * 12 : continentalness * 2;
+        let rawHeight = cContrib + erosion * 6 + detail * 3;
+
+        // Compress remaining underwater depth so lakes are shallow and self-contained
+        if (rawHeight < 0) {
+          rawHeight = Math.max(-3, rawHeight * 0.25);
+        }
+
+        let height = SEA_LEVEL + rawHeight;
         height = Math.floor(height);
         height = Math.max(1, Math.min(WORLD_HEIGHT - 2, height));
 
@@ -126,6 +136,13 @@ export class World {
     }
 
     this.chunks.set(key, chunk);
+
+    // Mark adjacent chunks dirty so they rebuild faces at the shared border
+    for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nc = this.getChunk(cx + dx, cz + dz);
+      if (nc) nc.dirty = true;
+    }
+
     return chunk;
   }
 
@@ -306,7 +323,7 @@ export class World {
           this._waterQueue.push([bx, by - 1, bz, 0]);
         }
 
-        if (hDist < 7) {
+        if (hDist < 4) { // reduced from 7 to keep water contained
           for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const nk = `${bx + dx},${by},${bz + dz}`;
             if (!this._waterVisited.has(nk)) {
@@ -360,9 +377,10 @@ export class World {
       }
     }
 
-    // Synchronous BFS fill
+    // Synchronous BFS fill — only within sea level and with containment
     while (queue.length > 0) {
       const [bx, by, bz, hDist] = queue.shift();
+      if (by > SEA_LEVEL || by < 1) continue; // never above sea level
       if (this.getBlock(bx, by, bz) !== BlockType.AIR) continue;
 
       const hasWaterNeighbor =
@@ -382,7 +400,7 @@ export class World {
         queue.push([bx, by - 1, bz, 0]);
       }
 
-      if (hDist < 7) {
+      if (hDist < 4) { // reduced from 7 to keep water contained
         for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nk = `${bx + dx},${by},${bz + dz}`;
           if (!visited.has(nk)) {

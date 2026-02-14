@@ -47,7 +47,17 @@ export class ChunkMesher {
             const ny = y + dir[1];
             const nz = wz + z + dir[2];
 
-            const neighbor = this.world.getBlock(nx, ny, nz);
+            // For water at chunk borders, treat unloaded chunks as opaque
+            // so water doesn't render faces into the void
+            let neighbor;
+            if (isWater && (nx < wx || nx >= wx + CHUNK_SIZE || nz < wz || nz >= wz + CHUNK_SIZE)) {
+              const ncx = Math.floor(nx / CHUNK_SIZE);
+              const ncz = Math.floor(nz / CHUNK_SIZE);
+              if (!this.world.getChunk(ncx, ncz)) {
+                continue; // skip face — neighbor chunk not loaded
+              }
+            }
+            neighbor = this.world.getBlock(nx, ny, nz);
             const neighborData = BlockData[neighbor];
             const neighborTransparent = neighborData?.transparent ?? true;
 
