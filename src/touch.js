@@ -1,9 +1,12 @@
+import { GameMode } from './gamemode.js';
+
 const JOYSTICK_RADIUS = 50;
 const DEAD_ZONE = 0.15;
 const CAMERA_SENSITIVITY = 0.004;
 const SPLIT = 0.4;
 const TAP_MAX_DIST = 12;    // px — finger drift allowed for a tap/hold
 const HOLD_DELAY = 400;     // ms — how long before hold starts breaking
+const DOUBLE_TAP_MS = 300;  // ms — window for double-tap to toggle flying
 
 export class TouchControls {
   static isTouchDevice() {
@@ -26,6 +29,9 @@ export class TouchControls {
     this.cameraMoved = false;
     this.holdTimer = null;
     this.isBreaking = false;
+
+    // Double-tap jump to toggle flying (creative)
+    this._lastJumpTap = 0;
 
     this.interaction.isTouch = true;
 
@@ -173,6 +179,18 @@ export class TouchControls {
         e.preventDefault();
         this.buttonTouches[touch.identifier] = 'jump';
         this.player.keys['Space'] = true;
+
+        // Double-tap jump to toggle flying (creative)
+        if (GameMode.isCreative() && this.player.active) {
+          const now = performance.now();
+          if (now - this._lastJumpTap < DOUBLE_TAP_MS) {
+            this.player.flying = !this.player.flying;
+            this.player.velocity.y = 0;
+            this._lastJumpTap = 0;
+          } else {
+            this._lastJumpTap = now;
+          }
+        }
         continue;
       }
       if (el === this.btnCrouch || this.btnCrouch.contains(el)) {
