@@ -14,6 +14,7 @@ import { PlayerArm } from './player-arm.js';
 import { GameMode } from './gamemode.js';
 import { ItemManager } from './items.js';
 import { Sound } from './sound.js';
+import { AmbientMusic } from './ambient-music.js';
 
 // Register service worker only in production builds
 if ('serviceWorker' in navigator) {
@@ -183,6 +184,7 @@ async function init() {
   }, inventory, itemManager);
 
   const sound = new Sound();
+  const ambientMusic = new AmbientMusic();
 
   // Show title screen
   const menu = new Menu(renderer.domElement, player);
@@ -196,6 +198,14 @@ async function init() {
     sky.alwaysDay = !sky.alwaysDay;
     btnDayNight.textContent = sky.alwaysDay ? 'Always Day: ON' : 'Always Day: OFF';
     localStorage.setItem('alwaysDay', sky.alwaysDay);
+  });
+
+  // Music toggle
+  const btnMusic = document.getElementById('btn-music');
+  btnMusic.textContent = ambientMusic.enabled ? 'Music: ON' : 'Music: OFF';
+  btnMusic.addEventListener('click', () => {
+    ambientMusic.setEnabled(!ambientMusic.enabled);
+    btnMusic.textContent = ambientMusic.enabled ? 'Music: ON' : 'Music: OFF';
   });
 
   // Game mode toggle
