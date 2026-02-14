@@ -86,14 +86,6 @@ export class TouchControls {
     });
     container.appendChild(btnCrouch);
 
-    // ── Inventory button (top-left) ──
-    const btnInventory = this._createButton('touch-btn-inventory', 'E', {
-      position: 'absolute', left: '16px', top: '16px',
-      width: '44px', height: '44px', borderRadius: '8px',
-      fontSize: '18px',
-    });
-    container.appendChild(btnInventory);
-
     // ── Pause button (top-right) ──
     const btnPause = this._createButton('touch-btn-pause', '&#x2016;', {
       position: 'absolute', right: '16px', top: '16px',
@@ -109,7 +101,6 @@ export class TouchControls {
     this.joystickThumb = joystickThumb;
     this.btnJump = btnJump;
     this.btnCrouch = btnCrouch;
-    this.btnInventory = btnInventory;
     this.btnPause = btnPause;
   }
 
@@ -173,11 +164,6 @@ export class TouchControls {
       if (this._isHotbar(el)) continue;
 
       // Buttons first
-      if (el === this.btnInventory || this.btnInventory.contains(el)) {
-        e.preventDefault();
-        document.dispatchEvent(new CustomEvent('touch-inventory'));
-        continue;
-      }
       if (el === this.btnPause || this.btnPause.contains(el)) {
         e.preventDefault();
         document.dispatchEvent(new CustomEvent('touch-pause'));

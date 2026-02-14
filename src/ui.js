@@ -141,6 +141,15 @@ export class UI {
 
       hotbar.appendChild(slot);
     });
+
+    // Three-dots inventory button
+    const invBtn = document.createElement('div');
+    invBtn.id = 'hotbar-inventory-btn';
+    invBtn.textContent = '\u2022\u2022\u2022';
+    invBtn.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('touch-inventory'));
+    });
+    hotbar.appendChild(invBtn);
   }
 
   _updateHand() {

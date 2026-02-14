@@ -67,9 +67,9 @@ export class Menu {
       this.closeInventory();
     });
 
-    // Listen for touch-inventory event
+    // Listen for inventory button event (hotbar dots / touch)
     document.addEventListener('touch-inventory', () => {
-      if (this.isTouch && this.state === 'playing') {
+      if (this.state === 'playing') {
         this.openInventory();
       }
     });

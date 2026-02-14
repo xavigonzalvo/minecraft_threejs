@@ -61,6 +61,16 @@ export class Inventory {
     const cur = this.blockCounts.get(blockType) || 0;
     this.blockCounts.set(blockType, cur + count);
     this._saveCounts();
+
+    // Auto-assign to hotbar if not already there
+    if (!this.hotbarBlocks.includes(blockType)) {
+      const emptySlot = this.hotbarBlocks.indexOf(BlockType.AIR);
+      if (emptySlot !== -1) {
+        this.hotbarBlocks[emptySlot] = blockType;
+        this._saveHotbar();
+      }
+    }
+
     document.dispatchEvent(new Event('hotbar-changed'));
   }
 
