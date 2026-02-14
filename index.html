@@ -248,6 +248,78 @@
       height: 100%;
     }
 
+    /* ── Inventory Overlay ── */
+    #inventory-overlay {
+      position: fixed; inset: 0;
+      z-index: 90;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.80);
+      color: #fff;
+      font-family: 'Segoe UI', monospace;
+    }
+    #inventory-overlay h2 {
+      font-size: 28px;
+      margin-bottom: 16px;
+      text-shadow: 2px 2px 0 #000;
+    }
+    .inventory-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 56px);
+      gap: 6px;
+    }
+    .inventory-cell {
+      width: 56px; height: 56px;
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+    }
+    .inventory-cell:hover {
+      border-color: #fff;
+      background: rgba(255,255,255,0.18);
+    }
+    .inventory-cell canvas {
+      width: 40px; height: 40px;
+      image-rendering: pixelated;
+    }
+    .inventory-name {
+      display: none;
+      position: absolute;
+      bottom: -24px;
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      font-size: 11px;
+      background: rgba(0,0,0,0.85);
+      padding: 2px 6px;
+      border-radius: 3px;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .inventory-cell:hover .inventory-name {
+      display: block;
+    }
+    .inventory-hint {
+      margin-top: 18px;
+      font-size: 14px;
+      color: #aaa;
+    }
+    .inventory-close-btn {
+      position: absolute;
+      top: 16px; right: 20px;
+      font-size: 32px;
+      cursor: pointer;
+      color: #aaa;
+      line-height: 1;
+    }
+    .inventory-close-btn:hover { color: #fff; }
+
   </style>
 </head>
 <body>
@@ -265,7 +337,7 @@
     <div class="controls-ref">
       WASD - Move &nbsp;|&nbsp; Space - Jump &nbsp;|&nbsp; Shift - Sprint<br>
       Left Click - Break &nbsp;|&nbsp; Right Click - Place<br>
-      1-9 - Select Block &nbsp;|&nbsp; Scroll - Change Block &nbsp;|&nbsp; ESC - Pause
+      1-9 - Select Block &nbsp;|&nbsp; Scroll - Change Block &nbsp;|&nbsp; E - Inventory &nbsp;|&nbsp; ESC - Pause
     </div>
   </div>
   <div id="pause-menu" class="menu-overlay hidden">

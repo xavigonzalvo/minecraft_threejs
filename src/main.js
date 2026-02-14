@@ -9,6 +9,8 @@ import { UI } from './ui.js';
 import { Menu } from './menu.js';
 import { TouchControls } from './touch.js';
 import { TextureEditor } from './texture-editor.js';
+import { Inventory } from './inventory.js';
+import { PlayerArm } from './player-arm.js';
 
 // Register service worker only in production builds
 if ('serviceWorker' in navigator) {
@@ -35,6 +37,7 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+scene.add(camera); // Required for camera children (PlayerArm) to render
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -169,10 +172,11 @@ async function init() {
   const spawn = world.getSpawnPoint();
   player.spawn(spawn);
 
-  // Setup interaction after world is loaded
+  // Setup inventory and interaction after world is loaded
+  const inventory = new Inventory(atlas);
   const interaction = new Interaction(player, world, scene, () => {
     rebuildDirtyChunks();
-  });
+  }, inventory);
 
   // Show title screen
   const menu = new Menu(renderer.domElement, player);
@@ -188,7 +192,8 @@ async function init() {
     localStorage.setItem('alwaysDay', sky.alwaysDay);
   });
 
-  const ui = new UI(atlas);
+  const playerArm = new PlayerArm(camera);
+  const ui = new UI(atlas, inventory, playerArm);
 
   // Touch controls
   let touchControls = null;
@@ -196,7 +201,9 @@ async function init() {
     touchControls = new TouchControls(player, interaction, renderer.domElement);
 
     document.addEventListener('game-state-change', (e) => {
-      if (e.detail.state === 'playing') {
+      const state = e.detail.state;
+      if (state === 'playing') {
+        inventory.hide();
         touchControls.show();
         // Request fullscreen + lock to landscape
         if (document.documentElement.requestFullscreen) {
@@ -204,13 +211,27 @@ async function init() {
             screen.orientation?.lock?.('landscape').catch(() => {});
           }).catch(() => {});
         }
+      } else if (state === 'inventory') {
+        inventory.show();
+        touchControls.hide();
       } else {
+        inventory.hide();
         touchControls.hide();
       }
     });
 
     renderer.domElement.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
     renderer.domElement.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  } else {
+    // Desktop: handle inventory show/hide on state changes
+    document.addEventListener('game-state-change', (e) => {
+      const state = e.detail.state;
+      if (state === 'inventory') {
+        inventory.show();
+      } else {
+        inventory.hide();
+      }
+    });
   }
 
   // ── Game Loop ──

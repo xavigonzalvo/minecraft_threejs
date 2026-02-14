@@ -1,15 +1,16 @@
 import * as THREE from 'three';
-import { BlockType, BlockData, HOTBAR_BLOCKS, isWaterBlock } from './blocks.js';
+import { BlockType, BlockData, isWaterBlock } from './blocks.js';
 
 const REACH = 6;
 const RAY_STEP = 0.02;
 
 export class Interaction {
-  constructor(player, world, scene, onBlockChange) {
+  constructor(player, world, scene, onBlockChange, inventory) {
     this.player = player;
     this.world = world;
     this.scene = scene;
     this.onBlockChange = onBlockChange;
+    this.inventory = inventory;
     this.selectedSlot = 0;
     this.breakCooldown = 0;
     this.placeCooldown = 0;
@@ -40,6 +41,7 @@ export class Interaction {
 
     document.addEventListener('hotbar-select', (e) => {
       this.selectedSlot = e.detail.slot;
+      this.inventory.setSelectedSlot(this.selectedSlot);
       this._updateHotbar();
     });
   }
@@ -54,18 +56,18 @@ export class Interaction {
     });
     document.addEventListener('wheel', (e) => {
       if (!this.player.active) return;
+      let newSlot;
       if (e.deltaY > 0) {
-        this.selectedSlot = (this.selectedSlot + 1) % HOTBAR_BLOCKS.length;
+        newSlot = (this.selectedSlot + 1) % 9;
       } else {
-        this.selectedSlot = (this.selectedSlot - 1 + HOTBAR_BLOCKS.length) % HOTBAR_BLOCKS.length;
+        newSlot = (this.selectedSlot - 1 + 9) % 9;
       }
-      this._updateHotbar();
+      document.dispatchEvent(new CustomEvent('hotbar-select', { detail: { slot: newSlot } }));
     });
     document.addEventListener('keydown', (e) => {
       const num = parseInt(e.key);
       if (num >= 1 && num <= 9) {
-        this.selectedSlot = num - 1;
-        this._updateHotbar();
+        document.dispatchEvent(new CustomEvent('hotbar-select', { detail: { slot: num - 1 } }));
       }
     });
   }
@@ -156,22 +158,25 @@ export class Interaction {
           this.world.flowWater(ray.x, ray.y, ray.z);
           this.onBlockChange();
           this.breakCooldown = 0.25;
+          document.dispatchEvent(new Event('block-break'));
         }
       }
 
       // Place block (right click)
       if (this._mouseDown[2] && this.placeCooldown <= 0) {
         if (ray.prevX !== -999) {
-          const placeType = HOTBAR_BLOCKS[this.selectedSlot];
-          // Don't place inside player
-          const px = Math.floor(this.player.position.x);
-          const py1 = Math.floor(this.player.position.y - 1.62);
-          const py2 = Math.floor(this.player.position.y);
-          const pz = Math.floor(this.player.position.z);
-          if (!(ray.prevX === px && ray.prevZ === pz && (ray.prevY === py1 || ray.prevY === py2))) {
-            this.world.setBlock(ray.prevX, ray.prevY, ray.prevZ, placeType);
-            this.onBlockChange();
-            this.placeCooldown = 0.25;
+          const placeType = this.inventory.getHotbarBlock(this.selectedSlot);
+          if (placeType !== BlockType.AIR) {
+            // Don't place inside player
+            const px = Math.floor(this.player.position.x);
+            const py1 = Math.floor(this.player.position.y - 1.62);
+            const py2 = Math.floor(this.player.position.y);
+            const pz = Math.floor(this.player.position.z);
+            if (!(ray.prevX === px && ray.prevZ === pz && (ray.prevY === py1 || ray.prevY === py2))) {
+              this.world.setBlock(ray.prevX, ray.prevY, ray.prevZ, placeType);
+              this.onBlockChange();
+              this.placeCooldown = 0.25;
+            }
           }
         }
       }
@@ -182,9 +187,10 @@ export class Interaction {
 
   placeBlockAtScreen(screenX, screenY) {
     if (this.placeCooldown > 0) return;
+    const placeType = this.inventory.getHotbarBlock(this.selectedSlot);
+    if (placeType === BlockType.AIR) return;
     const ray = this.raycastFromScreen(screenX, screenY);
     if (!ray.hit || ray.prevX === -999) return;
-    const placeType = HOTBAR_BLOCKS[this.selectedSlot];
     const px = Math.floor(this.player.position.x);
     const py1 = Math.floor(this.player.position.y - 1.62);
     const py2 = Math.floor(this.player.position.y);
@@ -197,6 +203,6 @@ export class Interaction {
   }
 
   getSelectedBlockType() {
-    return HOTBAR_BLOCKS[this.selectedSlot];
+    return this.inventory.getHotbarBlock(this.selectedSlot);
   }
 }
