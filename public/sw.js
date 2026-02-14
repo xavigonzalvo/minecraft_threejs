@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classic-builder-v1';
+const CACHE_NAME = 'classic-builder-v2';
 
 const PRECACHE_URLS = [
   '/',
@@ -24,19 +24,30 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: cache-first, fall back to network, then cache the response
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
+  // HTML navigation: network-first so new deploys are always picked up
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Static assets: cache-first for speed and offline support
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
 
       return fetch(event.request).then((response) => {
-        // Don't cache non-ok responses or opaque responses from CDNs
-        if (!response || response.status !== 200 || response.type === 'opaque') {
-          return response;
-        }
+        if (!response || response.status !== 200) return response;
 
         const clone = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
