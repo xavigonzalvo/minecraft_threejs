@@ -133,6 +133,7 @@ export class ItemManager {
         if (GameMode.isSurvival()) {
           this.inventory.addBlock(item.blockType);
         }
+        document.dispatchEvent(new CustomEvent('item-pickup', { detail: { blockType: item.blockType } }));
         this.scene.remove(item.mesh);
         item.mesh.material.dispose();
         this.items.splice(i, 1);

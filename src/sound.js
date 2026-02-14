@@ -46,6 +46,7 @@ export class Sound {
 
     document.addEventListener('mining-progress', (e) => this._onMiningProgress(e));
     document.addEventListener('block-break', (e) => this._onBlockBreak(e));
+    document.addEventListener('item-pickup', () => this._playPickup());
   }
 
   _initOnInteraction() {
@@ -190,6 +191,30 @@ export class Sound {
 
     source.start(now);
     source.stop(now + duration);
+  }
+
+  // Play a pickup "pop": short rising-pitch tone
+  _playPickup() {
+    const ctx = this._ensureContext();
+    const now = ctx.currentTime;
+    const duration = 0.08;
+    const pitchVariation = 0.9 + Math.random() * 0.2;
+
+    // Rising sine tone for the "pop"
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(500 * pitchVariation, now);
+    osc.frequency.exponentialRampToValueAtTime(1200 * pitchVariation, now + duration);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(this._volume * 0.7, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + duration);
   }
 
   _onMiningProgress(e) {
