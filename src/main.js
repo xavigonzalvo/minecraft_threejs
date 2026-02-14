@@ -13,6 +13,7 @@ import { Inventory } from './inventory.js';
 import { PlayerArm } from './player-arm.js';
 import { GameMode } from './gamemode.js';
 import { ItemManager } from './items.js';
+import { Sound } from './sound.js';
 
 // Register service worker only in production builds
 if ('serviceWorker' in navigator) {
@@ -180,6 +181,8 @@ async function init() {
   const interaction = new Interaction(player, world, scene, () => {
     rebuildDirtyChunks();
   }, inventory, itemManager);
+
+  const sound = new Sound();
 
   // Show title screen
   const menu = new Menu(renderer.domElement, player);

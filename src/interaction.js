@@ -158,7 +158,7 @@ export class Interaction {
     this.world.setBlock(ray.x, ray.y, ray.z, BlockType.AIR);
     this.world.flowWater(ray.x, ray.y, ray.z);
     this.onBlockChange();
-    document.dispatchEvent(new Event('block-break'));
+    document.dispatchEvent(new CustomEvent('block-break', { detail: { blockType: ray.blockType } }));
   }
 
   update(dt) {
@@ -217,6 +217,7 @@ export class Interaction {
               progress: ratio,
               active: true,
               blockX: ray.x, blockY: ray.y, blockZ: ray.z,
+              blockType: ray.blockType,
             }
           }));
 
