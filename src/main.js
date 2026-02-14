@@ -10,6 +10,18 @@ import { Menu } from './menu.js';
 import { TouchControls } from './touch.js';
 import { TextureEditor } from './texture-editor.js';
 
+// Register service worker only in production builds
+if ('serviceWorker' in navigator) {
+  if (import.meta.env.PROD) {
+    navigator.serviceWorker.register('/sw.js');
+  } else {
+    // Unregister any leftover SW from previous production tests
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(r => r.unregister());
+    });
+  }
+}
+
 // ── Configuration ──
 const RENDER_DISTANCE = 8; // chunks in each direction
 const SEED = Math.floor(Math.random() * 999999);
