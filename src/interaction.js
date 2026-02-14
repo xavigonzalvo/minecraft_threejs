@@ -1,21 +1,28 @@
 import * as THREE from 'three';
 import { BlockType, BlockData, isWaterBlock } from './blocks.js';
+import { GameMode } from './gamemode.js';
 
 const REACH = 6;
 const RAY_STEP = 0.02;
 
 export class Interaction {
-  constructor(player, world, scene, onBlockChange, inventory) {
+  constructor(player, world, scene, onBlockChange, inventory, itemManager) {
     this.player = player;
     this.world = world;
     this.scene = scene;
     this.onBlockChange = onBlockChange;
     this.inventory = inventory;
+    this.itemManager = itemManager;
     this.selectedSlot = 0;
     this.breakCooldown = 0;
     this.placeCooldown = 0;
     this.isTouch = false;
     this._touchScreenPos = null;
+
+    // Mining progress state
+    this._miningTarget = null; // {x, y, z} of block being mined
+    this._miningProgress = 0;
+    this._miningHardness = 0;
 
     // Block highlight wireframe
     const hlGeo = new THREE.BoxGeometry(1.005, 1.005, 1.005);
@@ -128,9 +135,36 @@ export class Interaction {
     return this._raycastRay(origin, dir);
   }
 
+  _resetMining() {
+    if (this._miningTarget) {
+      this._miningTarget = null;
+      this._miningProgress = 0;
+      this._miningHardness = 0;
+      document.dispatchEvent(new CustomEvent('mining-progress', { detail: { progress: 0, active: false } }));
+    }
+  }
+
+  _breakBlock(ray) {
+    const blockData = BlockData[ray.blockType];
+    const drop = blockData?.drops;
+
+    // Spawn dropped item (survival mode) or add directly (creative)
+    if (drop !== null && drop !== undefined) {
+      if (GameMode.isSurvival() && this.itemManager) {
+        this.itemManager.spawnItem(ray.x, ray.y, ray.z, drop);
+      }
+    }
+
+    this.world.setBlock(ray.x, ray.y, ray.z, BlockType.AIR);
+    this.world.flowWater(ray.x, ray.y, ray.z);
+    this.onBlockChange();
+    document.dispatchEvent(new Event('block-break'));
+  }
+
   update(dt) {
     if (!this.player.active) {
       this.highlight.visible = false;
+      this._resetMining();
       return;
     }
 
@@ -140,6 +174,7 @@ export class Interaction {
     // On touch devices, only raycast when there's an active touch target
     if (this.isTouch && !this._touchScreenPos) {
       this.highlight.visible = false;
+      this._resetMining();
       return;
     }
 
@@ -151,14 +186,52 @@ export class Interaction {
       this.highlight.position.set(ray.x + 0.5, ray.y + 0.5, ray.z + 0.5);
       this.highlight.visible = true;
 
-      // Break block (left click)
-      if (this._mouseDown[0] && this.breakCooldown <= 0) {
-        if (ray.blockType !== BlockType.BEDROCK) {
-          this.world.setBlock(ray.x, ray.y, ray.z, BlockType.AIR);
-          this.world.flowWater(ray.x, ray.y, ray.z);
-          this.onBlockChange();
-          this.breakCooldown = 0.25;
-          document.dispatchEvent(new Event('block-break'));
+      // Break block (left click hold-to-mine)
+      if (this._mouseDown[0]) {
+        const hardness = BlockData[ray.blockType]?.hardness ?? 0;
+
+        // Bedrock / infinite hardness — can't mine
+        if (hardness === Infinity) {
+          this._resetMining();
+        } else if (GameMode.isCreative()) {
+          // Creative: instant break with small cooldown
+          if (this.breakCooldown <= 0) {
+            this._breakBlock(ray);
+            this.breakCooldown = 0.25;
+          }
+        } else {
+          // Survival: hold to mine
+          const target = this._miningTarget;
+          if (!target || target.x !== ray.x || target.y !== ray.y || target.z !== ray.z) {
+            // Changed target — reset
+            this._miningTarget = { x: ray.x, y: ray.y, z: ray.z };
+            this._miningProgress = 0;
+            this._miningHardness = hardness;
+          }
+
+          this._miningProgress += dt;
+
+          const ratio = Math.min(this._miningProgress / this._miningHardness, 1);
+          document.dispatchEvent(new CustomEvent('mining-progress', {
+            detail: {
+              progress: ratio,
+              active: true,
+              blockX: ray.x, blockY: ray.y, blockZ: ray.z,
+            }
+          }));
+
+          if (this._miningProgress >= this._miningHardness) {
+            this._breakBlock(ray);
+            this._miningTarget = null;
+            this._miningProgress = 0;
+            this._miningHardness = 0;
+            document.dispatchEvent(new CustomEvent('mining-progress', { detail: { progress: 0, active: false } }));
+          }
+        }
+      } else {
+        // Not holding left click — reset mining
+        if (this._miningTarget) {
+          this._resetMining();
         }
       }
 
@@ -166,13 +239,17 @@ export class Interaction {
       if (this._mouseDown[2] && this.placeCooldown <= 0) {
         if (ray.prevX !== -999) {
           const placeType = this.inventory.getHotbarBlock(this.selectedSlot);
-          if (placeType !== BlockType.AIR) {
+          if (placeType !== BlockType.AIR && this.inventory.canPlace(placeType)) {
             // Don't place inside player
             const px = Math.floor(this.player.position.x);
             const py1 = Math.floor(this.player.position.y - 1.62);
             const py2 = Math.floor(this.player.position.y);
             const pz = Math.floor(this.player.position.z);
             if (!(ray.prevX === px && ray.prevZ === pz && (ray.prevY === py1 || ray.prevY === py2))) {
+              // Survival: consume block from inventory
+              if (GameMode.isSurvival()) {
+                this.inventory.removeBlock(placeType);
+              }
               this.world.setBlock(ray.prevX, ray.prevY, ray.prevZ, placeType);
               this.onBlockChange();
               this.placeCooldown = 0.25;
@@ -182,13 +259,14 @@ export class Interaction {
       }
     } else {
       this.highlight.visible = false;
+      this._resetMining();
     }
   }
 
   placeBlockAtScreen(screenX, screenY) {
     if (this.placeCooldown > 0) return;
     const placeType = this.inventory.getHotbarBlock(this.selectedSlot);
-    if (placeType === BlockType.AIR) return;
+    if (placeType === BlockType.AIR || !this.inventory.canPlace(placeType)) return;
     const ray = this.raycastFromScreen(screenX, screenY);
     if (!ray.hit || ray.prevX === -999) return;
     const px = Math.floor(this.player.position.x);
@@ -196,6 +274,9 @@ export class Interaction {
     const py2 = Math.floor(this.player.position.y);
     const pz = Math.floor(this.player.position.z);
     if (!(ray.prevX === px && ray.prevZ === pz && (ray.prevY === py1 || ray.prevY === py2))) {
+      if (GameMode.isSurvival()) {
+        this.inventory.removeBlock(placeType);
+      }
       this.world.setBlock(ray.prevX, ray.prevY, ray.prevZ, placeType);
       this.onBlockChange();
       this.placeCooldown = 0.25;

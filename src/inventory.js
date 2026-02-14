@@ -1,4 +1,5 @@
 import { BlockType, BlockData } from './blocks.js';
+import { GameMode } from './gamemode.js';
 
 const PLACEABLE_BLOCKS = [
   BlockType.GRASS, BlockType.DIRT, BlockType.STONE, BlockType.SAND,
@@ -8,12 +9,14 @@ const PLACEABLE_BLOCKS = [
 ];
 
 const STORAGE_KEY = 'hotbar_v2';
+const COUNTS_KEY = 'blockCounts';
 
 export class Inventory {
   constructor(atlas) {
     this.atlas = atlas;
     this.selectedSlot = 0;
     this.hotbarBlocks = this._loadHotbar();
+    this.blockCounts = this._loadCounts();
     this._buildDOM();
   }
 
@@ -33,6 +36,51 @@ export class Inventory {
 
   _saveHotbar() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.hotbarBlocks));
+  }
+
+  _loadCounts() {
+    try {
+      const raw = localStorage.getItem(COUNTS_KEY);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        const map = new Map();
+        for (const [k, v] of Object.entries(obj)) map.set(Number(k), v);
+        return map;
+      }
+    } catch { /* fall through */ }
+    return new Map();
+  }
+
+  _saveCounts() {
+    const obj = {};
+    for (const [k, v] of this.blockCounts) obj[k] = v;
+    localStorage.setItem(COUNTS_KEY, JSON.stringify(obj));
+  }
+
+  addBlock(blockType, count = 1) {
+    const cur = this.blockCounts.get(blockType) || 0;
+    this.blockCounts.set(blockType, cur + count);
+    this._saveCounts();
+    document.dispatchEvent(new Event('hotbar-changed'));
+  }
+
+  removeBlock(blockType) {
+    const cur = this.blockCounts.get(blockType) || 0;
+    if (cur <= 0) return false;
+    this.blockCounts.set(blockType, cur - 1);
+    if (cur - 1 === 0) this.blockCounts.delete(blockType);
+    this._saveCounts();
+    document.dispatchEvent(new Event('hotbar-changed'));
+    return true;
+  }
+
+  canPlace(blockType) {
+    if (GameMode.isCreative()) return true;
+    return (this.blockCounts.get(blockType) || 0) > 0;
+  }
+
+  getCount(blockType) {
+    return this.blockCounts.get(blockType) || 0;
   }
 
   _buildDOM() {

@@ -11,6 +11,8 @@ import { TouchControls } from './touch.js';
 import { TextureEditor } from './texture-editor.js';
 import { Inventory } from './inventory.js';
 import { PlayerArm } from './player-arm.js';
+import { GameMode } from './gamemode.js';
+import { ItemManager } from './items.js';
 
 // Register service worker only in production builds
 if ('serviceWorker' in navigator) {
@@ -172,11 +174,12 @@ async function init() {
   const spawn = world.getSpawnPoint();
   player.spawn(spawn);
 
-  // Setup inventory and interaction after world is loaded
+  // Setup inventory, items, and interaction after world is loaded
   const inventory = new Inventory(atlas);
+  const itemManager = new ItemManager(scene, world, atlas, inventory);
   const interaction = new Interaction(player, world, scene, () => {
     rebuildDirtyChunks();
-  }, inventory);
+  }, inventory, itemManager);
 
   // Show title screen
   const menu = new Menu(renderer.domElement, player);
@@ -192,8 +195,33 @@ async function init() {
     localStorage.setItem('alwaysDay', sky.alwaysDay);
   });
 
+  // Game mode toggle
+  const btnGameMode = document.getElementById('btn-gamemode');
+  const updateModeLabel = () => {
+    const label = GameMode.isCreative() ? 'Creative' : 'Survival';
+    btnGameMode.textContent = `Mode: ${label}`;
+  };
+  updateModeLabel();
+  btnGameMode.addEventListener('click', () => {
+    GameMode.toggle();
+    player.resetHealth();
+    player.flying = false;
+    updateModeLabel();
+  });
+  document.addEventListener('gamemode-change', updateModeLabel);
+
+  // Death / respawn
+  document.addEventListener('player-death', () => {
+    setTimeout(() => {
+      const spawnPt = world.getSpawnPoint();
+      player.spawn(spawnPt);
+      player.resetHealth();
+      document.dispatchEvent(new Event('player-respawn'));
+    }, 2000);
+  });
+
   const playerArm = new PlayerArm(camera);
-  const ui = new UI(atlas, inventory, playerArm);
+  const ui = new UI(atlas, inventory, playerArm, camera);
 
   // Touch controls
   let touchControls = null;
@@ -248,6 +276,7 @@ async function init() {
     if (touchControls) touchControls.update(dt);
     player.update(dt);
     interaction.update(dt);
+    itemManager.update(dt, player);
     if (world.updateWater(dt)) {
       rebuildDirtyChunks();
     }

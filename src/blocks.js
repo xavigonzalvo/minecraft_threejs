@@ -23,28 +23,29 @@ export const BlockType = {
   WATER_75: 19,
 };
 
-// Block properties
+// Block properties — drops: what block type is added to inventory when broken (null = nothing)
+// hardness: seconds to break (Infinity = unbreakable)
 export const BlockData = {
-  [BlockType.AIR]:         { name: 'Air',         solid: false, transparent: true  },
-  [BlockType.GRASS]:       { name: 'Grass',       solid: true,  transparent: false },
-  [BlockType.DIRT]:        { name: 'Dirt',        solid: true,  transparent: false },
-  [BlockType.STONE]:       { name: 'Stone',       solid: true,  transparent: false },
-  [BlockType.SAND]:        { name: 'Sand',        solid: true,  transparent: false },
-  [BlockType.WATER]:       { name: 'Water',       solid: false, transparent: true  },
-  [BlockType.OAK_LOG]:     { name: 'Oak Log',     solid: true,  transparent: false },
-  [BlockType.OAK_LEAVES]:  { name: 'Oak Leaves',  solid: true,  transparent: true  },
-  [BlockType.BEDROCK]:     { name: 'Bedrock',     solid: true,  transparent: false },
-  [BlockType.GRAVEL]:      { name: 'Gravel',      solid: true,  transparent: false },
-  [BlockType.COAL_ORE]:    { name: 'Coal Ore',    solid: true,  transparent: false },
-  [BlockType.IRON_ORE]:    { name: 'Iron Ore',    solid: true,  transparent: false },
-  [BlockType.COBBLESTONE]: { name: 'Cobblestone', solid: true,  transparent: false },
-  [BlockType.OAK_PLANKS]:  { name: 'Oak Planks',  solid: true,  transparent: false },
-  [BlockType.SNOW]:        { name: 'Snow',        solid: true,  transparent: false },
-  [BlockType.GLASS]:       { name: 'Glass',       solid: true,  transparent: true  },
-  [BlockType.BRICK]:       { name: 'Brick',       solid: true,  transparent: false },
-  [BlockType.WATER_25]:    { name: 'Water',       solid: false, transparent: true  },
-  [BlockType.WATER_50]:    { name: 'Water',       solid: false, transparent: true  },
-  [BlockType.WATER_75]:    { name: 'Water',       solid: false, transparent: true  },
+  [BlockType.AIR]:         { name: 'Air',         solid: false, transparent: true,  drops: null,                   hardness: 0 },
+  [BlockType.GRASS]:       { name: 'Grass',       solid: true,  transparent: false, drops: BlockType.DIRT,         hardness: 0.5 },
+  [BlockType.DIRT]:        { name: 'Dirt',        solid: true,  transparent: false, drops: BlockType.DIRT,         hardness: 0.4 },
+  [BlockType.STONE]:       { name: 'Stone',       solid: true,  transparent: false, drops: BlockType.COBBLESTONE,  hardness: 1.5 },
+  [BlockType.SAND]:        { name: 'Sand',        solid: true,  transparent: false, drops: BlockType.SAND,         hardness: 0.4 },
+  [BlockType.WATER]:       { name: 'Water',       solid: false, transparent: true,  drops: null,                   hardness: 0 },
+  [BlockType.OAK_LOG]:     { name: 'Oak Log',     solid: true,  transparent: false, drops: BlockType.OAK_LOG,      hardness: 1.0 },
+  [BlockType.OAK_LEAVES]:  { name: 'Oak Leaves',  solid: true,  transparent: true,  drops: null,                   hardness: 0.2 },
+  [BlockType.BEDROCK]:     { name: 'Bedrock',     solid: true,  transparent: false, drops: null,                   hardness: Infinity },
+  [BlockType.GRAVEL]:      { name: 'Gravel',      solid: true,  transparent: false, drops: BlockType.GRAVEL,       hardness: 0.4 },
+  [BlockType.COAL_ORE]:    { name: 'Coal Ore',    solid: true,  transparent: false, drops: BlockType.COAL_ORE,     hardness: 2.0 },
+  [BlockType.IRON_ORE]:    { name: 'Iron Ore',    solid: true,  transparent: false, drops: BlockType.IRON_ORE,     hardness: 2.0 },
+  [BlockType.COBBLESTONE]: { name: 'Cobblestone', solid: true,  transparent: false, drops: BlockType.COBBLESTONE,  hardness: 1.5 },
+  [BlockType.OAK_PLANKS]:  { name: 'Oak Planks',  solid: true,  transparent: false, drops: BlockType.OAK_PLANKS,   hardness: 1.0 },
+  [BlockType.SNOW]:        { name: 'Snow',        solid: true,  transparent: false, drops: BlockType.SNOW,         hardness: 0.4 },
+  [BlockType.GLASS]:       { name: 'Glass',       solid: true,  transparent: true,  drops: null,                   hardness: 0.3 },
+  [BlockType.BRICK]:       { name: 'Brick',       solid: true,  transparent: false, drops: BlockType.BRICK,        hardness: 1.5 },
+  [BlockType.WATER_25]:    { name: 'Water',       solid: false, transparent: true,  drops: null,                   hardness: 0 },
+  [BlockType.WATER_50]:    { name: 'Water',       solid: false, transparent: true,  drops: null,                   hardness: 0 },
+  [BlockType.WATER_75]:    { name: 'Water',       solid: false, transparent: true,  drops: null,                   hardness: 0 },
 };
 
 export function isWaterBlock(type) {

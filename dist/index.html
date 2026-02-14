@@ -104,6 +104,72 @@
     #loading .bar-fill { height: 100%; background: #4a8; width: 0%; transition: width 0.2s; }
     #loading.hidden { display: none; }
 
+    /* Health bar */
+    #health-bar {
+      position: fixed; top: 16px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 2px;
+      z-index: 10; pointer-events: none;
+    }
+    body:not(.game-active) #health-bar { display: none !important; }
+    .heart {
+      width: 18px; height: 18px;
+      font-size: 16px; line-height: 18px;
+      text-align: center;
+      text-shadow: 1px 1px 0 #000;
+      filter: drop-shadow(0 0 1px #000);
+    }
+    .heart.full { color: #e22; }
+    .heart.half { color: #e22; opacity: 0.55; }
+    .heart.empty { color: #555; }
+
+    /* Death overlay */
+    #death-overlay {
+      position: fixed; inset: 0;
+      background: rgba(180, 0, 0, 0.6);
+      display: none; align-items: center; justify-content: center;
+      flex-direction: column; z-index: 95;
+      color: #fff; font-family: 'Segoe UI', monospace;
+    }
+    #death-overlay h1 {
+      font-size: 56px; text-shadow: 3px 3px 0 #000;
+    }
+    #death-overlay p {
+      font-size: 18px; margin-top: 12px; color: #ddd;
+    }
+
+    /* Hotbar block count badge */
+    .hotbar-count {
+      position: absolute; bottom: 2px; right: 3px;
+      font-size: 10px; color: #fff;
+      text-shadow: 1px 1px 0 #000;
+      pointer-events: none;
+      font-family: monospace;
+    }
+
+    /* Mining progress overlay */
+    #mining-overlay {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9;
+      width: 40px; height: 40px;
+      display: none;
+    }
+    #mining-overlay .mining-crack {
+      width: 100%; height: 100%;
+      border: 2px solid rgba(0,0,0,0.6);
+      background: rgba(0,0,0,0.35);
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+    }
+    #mining-overlay .mining-fill {
+      position: absolute; bottom: 0; left: 0;
+      width: 100%; height: 0%;
+      background: rgba(255,255,255,0.35);
+      transition: height 0.05s linear;
+    }
+
     /* Hide touch controls when not playing */
     body:not(.game-active) #touch-controls { display: none !important; }
 
@@ -321,7 +387,7 @@
     .inventory-close-btn:hover { color: #fff; }
 
   </style>
-  <script type="module" crossorigin src="/assets/index-BqDWBll8.js"></script>
+  <script type="module" crossorigin src="/assets/index-cVuSiIfK.js"></script>
 </head>
 <body>
   <div id="rotate-device">
@@ -345,11 +411,15 @@
     <h2>Game Paused</h2>
     <button id="btn-resume" class="menu-btn">Resume</button>
     <button id="btn-edit-textures" class="menu-btn">Texture Editor</button>
+    <button id="btn-gamemode" class="menu-btn">Mode: Creative</button>
     <button id="btn-daynight" class="menu-btn">Always Day: OFF</button>
     <button id="btn-back-to-title" class="menu-btn">Back to Title</button>
   </div>
+  <div id="mining-overlay"><div class="mining-crack"><div class="mining-fill"></div></div></div>
   <div id="crosshair"></div>
   <div id="hotbar"></div>
+  <div id="health-bar"></div>
+  <div id="death-overlay"><h1>You Died!</h1><p>Respawning...</p></div>
   <div id="debug"></div>
   <div id="texture-editor-overlay"></div>
 </body>

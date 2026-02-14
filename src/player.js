@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BlockType, isWaterBlock } from './blocks.js';
+import { GameMode } from './gamemode.js';
 
 const GRAVITY = -52;
 const JUMP_SPEED = 13;
@@ -13,6 +14,11 @@ const PLAYER_HEIGHT = 1.62;
 const PLAYER_WIDTH = 0.6;
 const PLAYER_EYE_HEIGHT = 1.52;
 const MOUSE_SENSITIVITY = 0.002;
+const FLY_SPEED = 12;
+const FLY_VERTICAL_SPEED = 8;
+const MAX_HEALTH = 20;
+const VOID_DAMAGE_INTERVAL = 0.5;
+const DOUBLE_TAP_MS = 300;
 
 export class Player {
   constructor(camera, world, canvas) {
@@ -28,7 +34,21 @@ export class Player {
     this.sprinting = false;
     this.inWater = false;
     this.headInWater = false;
-    this.smoothCameraY = 0; // smoothly interpolated camera Y
+    this.smoothCameraY = 0;
+
+    // Health system (survival)
+    this.health = MAX_HEALTH;
+    this.dead = false;
+
+    // Fall damage tracking
+    this._fallStartY = null;
+
+    // Void damage timer
+    this._voidDamageTimer = 0;
+
+    // Creative flying
+    this.flying = false;
+    this._lastSpaceTap = 0;
 
     this.keys = {};
     this.locked = false;
@@ -41,6 +61,18 @@ export class Player {
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
       if (e.code === 'ShiftLeft') this.sprinting = true;
+
+      // Double-tap space to toggle flying (creative only)
+      if (e.code === 'Space' && GameMode.isCreative() && this.active) {
+        const now = performance.now();
+        if (now - this._lastSpaceTap < DOUBLE_TAP_MS) {
+          this.flying = !this.flying;
+          this.velocity.y = 0;
+          this._lastSpaceTap = 0;
+        } else {
+          this._lastSpaceTap = now;
+        }
+      }
     });
     document.addEventListener('keyup', (e) => {
       this.keys[e.code] = false;
@@ -67,13 +99,37 @@ export class Player {
     this.position.set(pos.x, pos.y, pos.z);
     this.velocity.set(0, 0, 0);
     this.smoothCameraY = pos.y + PLAYER_EYE_HEIGHT - PLAYER_HEIGHT;
+    this._fallStartY = null;
+    this._voidDamageTimer = 0;
+  }
+
+  resetHealth() {
+    this.health = MAX_HEALTH;
+    this.dead = false;
+    document.dispatchEvent(new CustomEvent('health-change', { detail: { health: this.health, max: MAX_HEALTH } }));
+  }
+
+  damage(amount) {
+    if (GameMode.isCreative() || this.dead) return;
+    this.health = Math.max(0, this.health - amount);
+    document.dispatchEvent(new CustomEvent('health-change', { detail: { health: this.health, max: MAX_HEALTH } }));
+    if (this.health <= 0) {
+      this.dead = true;
+      this.velocity.set(0, 0, 0);
+      document.dispatchEvent(new Event('player-death'));
+    }
   }
 
   update(dt) {
-    if (!this.active) return;
+    if (!this.active || this.dead) return;
 
     // Clamp dt to avoid physics explosion on tab-switch
     dt = Math.min(dt, 0.1);
+
+    // Disable flying if switched to survival
+    if (GameMode.isSurvival() && this.flying) {
+      this.flying = false;
+    }
 
     // Check if player is in water (feet or head)
     const feetBlockY = Math.floor(this.position.y - PLAYER_HEIGHT);
@@ -84,68 +140,98 @@ export class Player {
                 || isWaterBlock(this.world.getBlock(blockX, feetBlockY + 1, blockZ));
     this.headInWater = isWaterBlock(this.world.getBlock(blockX, headBlockY, blockZ));
 
-    const speed = this.inWater ? SWIM_SPEED : (this.sprinting ? SPRINT_SPEED : WALK_SPEED);
+    // Flying mode (creative)
+    if (this.flying) {
+      const flyH = this.sprinting ? FLY_SPEED * 1.5 : FLY_SPEED;
+      const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+      const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
-    // Movement direction from input
-    const forward = new THREE.Vector3(
-      -Math.sin(this.yaw),
-      0,
-      -Math.cos(this.yaw)
-    );
-    const right = new THREE.Vector3(
-      Math.cos(this.yaw),
-      0,
-      -Math.sin(this.yaw)
-    );
+      const moveDir = new THREE.Vector3(0, 0, 0);
+      if (this.keys['KeyW']) moveDir.add(forward);
+      if (this.keys['KeyS']) moveDir.sub(forward);
+      if (this.keys['KeyA']) moveDir.sub(right);
+      if (this.keys['KeyD']) moveDir.add(right);
+      if (moveDir.length() > 0) moveDir.normalize();
 
-    const moveDir = new THREE.Vector3(0, 0, 0);
-    if (this.keys['KeyW']) moveDir.add(forward);
-    if (this.keys['KeyS']) moveDir.sub(forward);
-    if (this.keys['KeyA']) moveDir.sub(right);
-    if (this.keys['KeyD']) moveDir.add(right);
-    if (moveDir.length() > 0) moveDir.normalize();
+      this.velocity.x = moveDir.x * flyH;
+      this.velocity.z = moveDir.z * flyH;
+      this.velocity.y = 0;
+      if (this.keys['Space']) this.velocity.y = FLY_VERTICAL_SPEED;
+      if (this.keys['ShiftLeft']) this.velocity.y = -FLY_VERTICAL_SPEED;
 
-    // Apply horizontal velocity
-    this.velocity.x = moveDir.x * speed;
-    this.velocity.z = moveDir.z * speed;
-
-    if (this.inWater) {
-      // Water physics: slow sinking + drag
-      this.velocity.y += WATER_GRAVITY * dt;
-      this.velocity.y *= WATER_DRAG;
-
-      // Swim up with space, sink faster with shift
-      if (this.keys['Space']) {
-        this.velocity.y = SWIM_SPEED;
-      } else if (this.keys['ShiftLeft']) {
-        this.velocity.y = -SWIM_SPEED;
-      }
-
-      // Clamp vertical speed in water
-      this.velocity.y = Math.max(-SWIM_SPEED, Math.min(SWIM_SPEED, this.velocity.y));
+      this._moveAxis(1, this.velocity.y * dt);
+      this._moveAxis(0, this.velocity.x * dt);
+      this._moveAxis(2, this.velocity.z * dt);
+      this.onGround = false;
     } else {
-      // Normal gravity
-      this.velocity.y += GRAVITY * dt;
+      const speed = this.inWater ? SWIM_SPEED : (this.sprinting ? SPRINT_SPEED : WALK_SPEED);
 
-      // Jump
-      if (this.keys['Space'] && this.onGround) {
-        this.velocity.y = JUMP_SPEED;
-        this.onGround = false;
+      const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+      const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+
+      const moveDir = new THREE.Vector3(0, 0, 0);
+      if (this.keys['KeyW']) moveDir.add(forward);
+      if (this.keys['KeyS']) moveDir.sub(forward);
+      if (this.keys['KeyA']) moveDir.sub(right);
+      if (this.keys['KeyD']) moveDir.add(right);
+      if (moveDir.length() > 0) moveDir.normalize();
+
+      this.velocity.x = moveDir.x * speed;
+      this.velocity.z = moveDir.z * speed;
+
+      if (this.inWater) {
+        this.velocity.y += WATER_GRAVITY * dt;
+        this.velocity.y *= WATER_DRAG;
+        if (this.keys['Space']) this.velocity.y = SWIM_SPEED;
+        else if (this.keys['ShiftLeft']) this.velocity.y = -SWIM_SPEED;
+        this.velocity.y = Math.max(-SWIM_SPEED, Math.min(SWIM_SPEED, this.velocity.y));
+      } else {
+        this.velocity.y += GRAVITY * dt;
+        if (this.keys['Space'] && this.onGround) {
+          this.velocity.y = JUMP_SPEED;
+          this.onGround = false;
+        }
       }
+
+      // Fall damage tracking: record Y when leaving ground
+      const wasOnGround = this.onGround;
+      this._moveAxis(1, this.velocity.y * dt);
+
+      // Detect landing
+      if (this.onGround && !wasOnGround && this._fallStartY !== null) {
+        const fallDist = this._fallStartY - this.position.y;
+        if (fallDist > 3 && GameMode.isSurvival() && !this.inWater) {
+          this.damage(Math.floor(fallDist - 3));
+        }
+        this._fallStartY = null;
+      }
+
+      // Track fall start
+      if (!this.onGround && this._fallStartY === null && this.velocity.y < 0) {
+        this._fallStartY = this.position.y;
+      }
+      if (this.onGround) this._fallStartY = null;
+
+      this._moveAxis(0, this.velocity.x * dt);
+      this._moveAxis(2, this.velocity.z * dt);
     }
 
-    // Move with collision detection (split axes, Y first so ground is resolved before horizontal)
-    this._moveAxis(1, this.velocity.y * dt);
-    this._moveAxis(0, this.velocity.x * dt);
-    this._moveAxis(2, this.velocity.z * dt);
+    // Void damage (survival): below Y=0
+    if (GameMode.isSurvival() && this.position.y < 0) {
+      this._voidDamageTimer += dt;
+      if (this._voidDamageTimer >= VOID_DAMAGE_INTERVAL) {
+        this._voidDamageTimer -= VOID_DAMAGE_INTERVAL;
+        this.damage(2);
+      }
+    } else {
+      this._voidDamageTimer = 0;
+    }
 
     // Update camera: smooth only upward step-ups, snap instantly on falls/landings
     const targetCamY = this.position.y + PLAYER_EYE_HEIGHT - PLAYER_HEIGHT;
     if (targetCamY < this.smoothCameraY) {
-      // Falling or landing: snap camera instantly for a sharp feel
       this.smoothCameraY = targetCamY;
     } else {
-      // Stepping up: smooth interpolation
       const lerpSpeed = 15;
       this.smoothCameraY += (targetCamY - this.smoothCameraY) * Math.min(1, lerpSpeed * dt);
     }
