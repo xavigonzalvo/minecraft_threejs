@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BlockData, BlockType } from './blocks.js';
 import { GameMode } from './gamemode.js';
-import { isItemType, getItemOrBlockData } from './crafting.js';
+import { isItemType, getItemOrBlockData, ItemType } from './crafting.js';
 
 export class UI {
   constructor(atlas, inventory, playerArm, camera) {
@@ -27,7 +27,8 @@ export class UI {
       this._updateHand();
     });
 
-    document.addEventListener('hotbar-select', () => {
+    document.addEventListener('hotbar-select', (e) => {
+      this.inventory.setSelectedSlot(e.detail.slot);
       this._updateHand();
     });
 
@@ -166,6 +167,15 @@ export class UI {
     const bt = this.inventory.getHotbarBlock(this.inventory.selectedSlot);
     // Show arm when holding nothing or an item (tools don't have block models)
     this.playerArm.setVisible(bt === BlockType.AIR || isItemType(bt));
+
+    // Show tool in hand if holding a tool item
+    if (isItemType(bt)) {
+      if (this.playerArm._currentToolType !== bt) {
+        this.playerArm.setTool(bt);
+      }
+    } else if (this.playerArm._currentToolType !== null) {
+      this.playerArm.setTool(null);
+    }
   }
 
   update(dt, player, world, chunkCount) {

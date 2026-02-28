@@ -10,6 +10,12 @@ const PLACEABLE_BLOCKS = [
   BlockType.CRAFTING_TABLE,
 ];
 
+const CATALOG_ITEMS = [
+  ...PLACEABLE_BLOCKS,
+  ItemType.STICK,
+  ItemType.WOODEN_AXE,
+];
+
 const STORAGE_KEY = 'hotbar_v2';
 const COUNTS_KEY = 'blockCounts';
 const PERSONAL_KEY = 'personalInventory';
@@ -216,12 +222,14 @@ export class Inventory {
     for (let i = 0; i < 4; i++) {
       const slot = this.invCraftingGrid[i];
       if (slot) {
-        this.addBlock(slot.type, slot.count);
+        this._addToPersonal(slot.type, slot.count);
         this.invCraftingGrid[i] = null;
       }
     }
     // If holding an item, put it back
     this._cancelHeld();
+    this._syncCountsFromPersonal();
+    document.dispatchEvent(new Event('hotbar-changed'));
     this.overlay.style.display = 'none';
     document.removeEventListener('mousemove', this._onMouseMove);
   }
@@ -410,6 +418,10 @@ export class Inventory {
         } else if (h.source.area === 'hotbar') {
           this.hotbarBlocks[h.source.index] = existing.type;
           this._saveHotbar();
+        } else if (h.source.area === 'crafting') {
+          this.craftingGrid[h.source.index] = existing;
+        } else if (h.source.area === 'invCrafting') {
+          this.invCraftingGrid[h.source.index] = existing;
         }
       } else {
         this.personalSlots[index] = { type: h.type, count: h.count === Infinity ? 64 : h.count };
@@ -543,7 +555,7 @@ export class Inventory {
     leftPanel.className = 'inv-panel';
     const leftTitle = document.createElement('div');
     leftTitle.className = 'inv-panel-title';
-    leftTitle.textContent = 'All Blocks';
+    leftTitle.textContent = 'All Items';
     leftPanel.appendChild(leftTitle);
     this.catalogGrid = document.createElement('div');
     this.catalogGrid.className = 'inv-catalog';
@@ -732,11 +744,13 @@ export class Inventory {
     for (let i = 0; i < 9; i++) {
       const slot = this.craftingGrid[i];
       if (slot) {
-        this.addBlock(slot.type, slot.count);
+        this._addToPersonal(slot.type, slot.count);
         this.craftingGrid[i] = null;
       }
     }
     this._cancelHeld();
+    this._syncCountsFromPersonal();
+    document.dispatchEvent(new Event('hotbar-changed'));
     this.craftingOverlay.style.display = 'none';
     document.removeEventListener('mousemove', this._onMouseMove);
   }
@@ -984,7 +998,7 @@ export class Inventory {
 
     // Catalog (left)
     this.catalogGrid.innerHTML = '';
-    for (const bt of PLACEABLE_BLOCKS) {
+    for (const bt of CATALOG_ITEMS) {
       const count = this.getCount(bt);
       const countText = isCreative ? '\u221e' : (count > 0 ? String(count) : null);
       const cell = this._makeCellWithBlock(bt, countText);
