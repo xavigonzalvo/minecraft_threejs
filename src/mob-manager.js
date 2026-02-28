@@ -79,6 +79,47 @@ export class MobManager {
         mob.removed = true;
       }
     }
+
+    // Mob-to-mob collision: push overlapping mobs apart
+    for (let i = 0; i < this.mobs.length; i++) {
+      const a = this.mobs[i];
+      if (a.dead) continue;
+      for (let j = i + 1; j < this.mobs.length; j++) {
+        const b = this.mobs[j];
+        if (b.dead) continue;
+
+        const dx = a.position.x - b.position.x;
+        const dz = a.position.z - b.position.z;
+        const minDist = (a.width + b.width) / 2;
+        const distSq = dx * dx + dz * dz;
+
+        if (distSq < minDist * minDist && distSq > 0.0001) {
+          // Vertical overlap check
+          const aTop = a.position.y;
+          const aBot = a.position.y - a.height;
+          const bTop = b.position.y;
+          const bBot = b.position.y - b.height;
+          if (aTop <= bBot || bTop <= aBot) continue;
+
+          const dist = Math.sqrt(distSq);
+          const overlap = minDist - dist;
+          const nx = dx / dist;
+          const nz = dz / dist;
+          const half = overlap / 2;
+          a.position.x += nx * half;
+          a.position.z += nz * half;
+          b.position.x -= nx * half;
+          b.position.z -= nz * half;
+        } else if (distSq <= 0.0001) {
+          // Mobs at exact same position — nudge apart
+          const angle = Math.random() * Math.PI * 2;
+          a.position.x += Math.cos(angle) * 0.05;
+          a.position.z += Math.sin(angle) * 0.05;
+          b.position.x -= Math.cos(angle) * 0.05;
+          b.position.z -= Math.sin(angle) * 0.05;
+        }
+      }
+    }
   }
 
   _trySpawn(player) {
