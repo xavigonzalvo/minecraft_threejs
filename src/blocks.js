@@ -97,6 +97,14 @@ export const TEXTURE_FILES = {
   [BlockType.BRICK]:       { all: 'brick' },
 };
 
+// Mob texture names (editable in texture editor)
+export const MOB_TEXTURE_FILES = [
+  'zombie_head',
+  'zombie_body',
+  'zombie_arm',
+  'zombie_leg',
+];
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();

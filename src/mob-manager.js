@@ -9,9 +9,10 @@ const SPAWN_MAX_DIST = 32;
 const DESPAWN_DIST = 64;
 
 export class MobManager {
-  constructor(scene, world) {
+  constructor(scene, world, sky) {
     this.scene = scene;
     this.world = world;
+    this.sky = sky;
     this.mobs = [];
     this._spawnTimer = SPAWN_INTERVAL;
   }
@@ -27,6 +28,13 @@ export class MobManager {
       if (this._spawnTimer <= 0) {
         this._spawnTimer = SPAWN_INTERVAL;
         this._trySpawn(player);
+      }
+    }
+
+    // Despawn all mobs when day arrives
+    if (this.sky && !this.sky.isNight() && this.mobs.length > 0) {
+      for (const mob of this.mobs) {
+        if (!mob.dead) mob.removed = true;
       }
     }
 
@@ -75,6 +83,7 @@ export class MobManager {
 
   _trySpawn(player) {
     if (this.mobs.length >= MAX_MOBS) return;
+    if (this.sky && !this.sky.isNight()) return;
 
     // Pick random angle and distance
     const angle = Math.random() * Math.PI * 2;

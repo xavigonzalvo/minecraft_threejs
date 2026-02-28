@@ -184,7 +184,7 @@ async function init() {
     rebuildDirtyChunks();
   }, inventory, itemManager);
 
-  const mobManager = new MobManager(scene, world);
+  const mobManager = new MobManager(scene, world, sky);
   interaction.setMobManager(mobManager);
 
   const sound = new Sound();

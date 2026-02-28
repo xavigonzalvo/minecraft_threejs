@@ -1,6 +1,33 @@
 import * as THREE from 'three';
 import { BlockData, isWaterBlock } from './blocks.js';
 
+// Cache for mob textures
+const _mobTextureCache = {};
+function getMobTexture(name) {
+  if (_mobTextureCache[name]) return _mobTextureCache[name];
+  const saved = localStorage.getItem('tex:' + name);
+  const loader = new THREE.TextureLoader();
+  const tex = loader.load(saved || `/textures/${name}.png`);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  _mobTextureCache[name] = tex;
+  return tex;
+}
+
+export function reloadMobTextures() {
+  for (const name of Object.keys(_mobTextureCache)) {
+    const saved = localStorage.getItem('tex:' + name);
+    if (saved) {
+      _mobTextureCache[name].image = new Image();
+      _mobTextureCache[name].image.src = saved;
+      _mobTextureCache[name].image.onload = () => {
+        _mobTextureCache[name].needsUpdate = true;
+      };
+    }
+  }
+}
+
 const GRAVITY = -52;
 const MOB_WIDTH = 0.6;
 const MOB_HEIGHT = 1.8;
@@ -16,6 +43,7 @@ const ZOMBIE_SPEED = 3.0;
 const ZOMBIE_HEALTH = 20;
 const ZOMBIE_ATTACK_DAMAGE = 3;
 const ZOMBIE_ATTACK_RANGE = 1.5;
+const ZOMBIE_ATTACK_RANGE_Y = 4;
 const ZOMBIE_ATTACK_COOLDOWN = 1.0;
 const ZOMBIE_DETECTION_RANGE = 16;
 const ZOMBIE_KNOCKBACK = 8;
@@ -201,46 +229,47 @@ export class Zombie extends Mob {
   }
 
   _buildModel() {
-    const green = new THREE.MeshLambertMaterial({ color: 0x5a8a3c });
-    const darkGreen = new THREE.MeshLambertMaterial({ color: 0x4a7a2c });
-    const blue = new THREE.MeshLambertMaterial({ color: 0x2a3a6a });
+    const headMat = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_head') });
+    const bodyMat = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_body') });
+    const armMat  = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_arm') });
+    const legMat  = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_leg') });
 
-    // Head (0.5 x 0.5 x 0.5)
+    // Head (0.5 x 0.5 x 0.5) — sits on top of body at y=1.5
     const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    this.head = new THREE.Mesh(headGeo, green);
-    this.head.position.set(0, 1.55, 0);
+    this.head = new THREE.Mesh(headGeo, headMat);
+    this.head.position.set(0, 1.75, 0);
 
-    // Body (0.5 x 0.75 x 0.3)
-    const bodyGeo = new THREE.BoxGeometry(0.5, 0.75, 0.3);
-    this.body = new THREE.Mesh(bodyGeo, darkGreen);
-    this.body.position.set(0, 0.975, 0);
+    // Body (0.5 x 0.75 x 0.25) — from y=0.75 to y=1.5
+    const bodyGeo = new THREE.BoxGeometry(0.5, 0.75, 0.25);
+    this.body = new THREE.Mesh(bodyGeo, bodyMat);
+    this.body.position.set(0, 1.125, 0);
 
-    // Arms (0.15 x 0.75 x 0.15) — extended forward for zombie pose
-    const armGeo = new THREE.BoxGeometry(0.15, 0.75, 0.15);
+    // Arms (0.25 x 0.75 x 0.25) — pivot at top of body (y=1.5)
+    const leftArmGeo = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+    leftArmGeo.translate(0, -0.375, 0); // pivot at top
+    this.leftArm = new THREE.Mesh(leftArmGeo, armMat);
+    this.leftArm.position.set(-0.375, 1.5, 0);
 
-    this.leftArm = new THREE.Mesh(armGeo, green);
-    this.leftArm.position.set(-0.325, 0.975, 0);
-    this.leftArm.geometry.translate(0, -0.375, 0); // pivot at top
+    const rightArmGeo = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+    rightArmGeo.translate(0, -0.375, 0);
+    this.rightArm = new THREE.Mesh(rightArmGeo, armMat);
+    this.rightArm.position.set(0.375, 1.5, 0);
 
-    this.rightArm = new THREE.Mesh(armGeo, green);
-    this.rightArm.position.set(0.325, 0.975, 0);
-    this.rightArm.geometry.translate(0, -0.375, 0);
+    // Legs (0.25 x 0.75 x 0.25) — pivot at bottom of body (y=0.75)
+    const leftLegGeo = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+    leftLegGeo.translate(0, -0.375, 0); // pivot at top
+    this.leftLeg = new THREE.Mesh(leftLegGeo, legMat);
+    this.leftLeg.position.set(-0.125, 0.75, 0);
 
-    // Legs (0.2 x 0.75 x 0.2)
-    const legGeo = new THREE.BoxGeometry(0.2, 0.75, 0.2);
-
-    this.leftLeg = new THREE.Mesh(legGeo.clone(), blue);
-    this.leftLeg.position.set(-0.125, 0.375, 0);
-    this.leftLeg.geometry.translate(0, -0.375, 0); // pivot at top
-
-    this.rightLeg = new THREE.Mesh(legGeo.clone(), blue);
-    this.rightLeg.position.set(0.125, 0.375, 0);
-    this.rightLeg.geometry.translate(0, -0.375, 0);
+    const rightLegGeo = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+    rightLegGeo.translate(0, -0.375, 0);
+    this.rightLeg = new THREE.Mesh(rightLegGeo, legMat);
+    this.rightLeg.position.set(0.125, 0.75, 0);
 
     this.group.add(this.head, this.body, this.leftArm, this.rightArm, this.leftLeg, this.rightLeg);
 
     // Store materials for flash effect
-    this._materials = [green, darkGreen, blue];
+    this._materials = [headMat, bodyMat, armMat, legMat];
     this._originalColors = this._materials.map(m => m.color.clone());
   }
 
@@ -279,8 +308,11 @@ export class Zombie extends Mob {
 
     // AI state machine
     const dx = playerPos.x - this.position.x;
+    const dy = playerPos.y - this.position.y;
     const dz = playerPos.z - this.position.z;
     const distToPlayer = Math.sqrt(dx * dx + dz * dz);
+    const hDistToPlayer = distToPlayer;
+    const canReachVertically = Math.abs(dy) < ZOMBIE_ATTACK_RANGE_Y;
 
     this._stateTimer -= dt;
 
@@ -313,7 +345,7 @@ export class Zombie extends Mob {
         if (distToPlayer > ZOMBIE_DETECTION_RANGE * 2) {
           this.state = STATE_IDLE;
           this._stateTimer = 2;
-        } else if (distToPlayer < ZOMBIE_ATTACK_RANGE) {
+        } else if (hDistToPlayer < ZOMBIE_ATTACK_RANGE && canReachVertically) {
           this.state = STATE_ATTACK;
         } else {
           const dirX = dx / distToPlayer;
@@ -331,7 +363,7 @@ export class Zombie extends Mob {
         break;
 
       case STATE_ATTACK:
-        if (distToPlayer > ZOMBIE_ATTACK_RANGE * 1.5) {
+        if (hDistToPlayer > ZOMBIE_ATTACK_RANGE * 1.5 || !canReachVertically) {
           this.state = STATE_CHASE;
         } else {
           // Face player
@@ -375,9 +407,10 @@ export class Zombie extends Mob {
   canAttackPlayer(playerPos) {
     if (this.dead || this._attackCooldown > 0 || this.state !== STATE_ATTACK) return false;
     const dx = playerPos.x - this.position.x;
+    const dy = playerPos.y - this.position.y;
     const dz = playerPos.z - this.position.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    return dist < ZOMBIE_ATTACK_RANGE;
+    const hDist = Math.sqrt(dx * dx + dz * dz);
+    return hDist < ZOMBIE_ATTACK_RANGE && Math.abs(dy) < ZOMBIE_ATTACK_RANGE_Y;
   }
 
   onAttackPlayer() {

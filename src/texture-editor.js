@@ -1,4 +1,5 @@
-import { TEXTURE_FILES, BlockData, BlockType } from './blocks.js';
+import { TEXTURE_FILES, BlockData, BlockType, MOB_TEXTURE_FILES } from './blocks.js';
+import { reloadMobTextures } from './mob.js';
 
 const TEX_SIZE = 16;
 const ATLAS_COLS = 16;
@@ -15,6 +16,12 @@ export class TextureEditor {
       for (const name of Object.values(faces)) {
         if (!seen.has(name)) { seen.add(name); this.textureNames.push(name); }
       }
+    }
+
+    // Mob textures
+    this.mobTextureNames = [];
+    for (const name of MOB_TEXTURE_FILES) {
+      if (!seen.has(name)) { seen.add(name); this.mobTextureNames.push(name); }
     }
 
     // State
@@ -40,7 +47,8 @@ export class TextureEditor {
   // ── Image loading ──
 
   async _loadAllImages() {
-    await Promise.all(this.textureNames.map(async (name) => {
+    const allNames = [...this.textureNames, ...this.mobTextureNames];
+    await Promise.all(allNames.map(async (name) => {
       const img = new Image();
       // Use saved version from localStorage if available
       const saved = localStorage.getItem('tex:' + name);
@@ -213,25 +221,38 @@ export class TextureEditor {
 
   _populateSidebar() {
     this.fileList.innerHTML = '';
-    for (const name of this.textureNames) {
-      const item = document.createElement('div');
-      item.className = 'te-file-item';
-      item.dataset.name = name;
 
-      const thumb = document.createElement('canvas');
-      thumb.width = 16; thumb.height = 16;
-      thumb.className = 'te-thumb';
-      const tCtx = thumb.getContext('2d');
-      tCtx.imageSmoothingEnabled = false;
-      if (this.images[name]) tCtx.drawImage(this.images[name], 0, 0);
+    const addSection = (title, names) => {
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'te-section-header';
+      sectionHeader.textContent = title;
+      this.fileList.appendChild(sectionHeader);
 
-      const label = document.createElement('span');
-      label.textContent = name;
+      for (const name of names) {
+        const item = document.createElement('div');
+        item.className = 'te-file-item';
+        item.dataset.name = name;
 
-      item.appendChild(thumb);
-      item.appendChild(label);
-      item.addEventListener('click', () => this._selectTexture(name));
-      this.fileList.appendChild(item);
+        const thumb = document.createElement('canvas');
+        thumb.width = 16; thumb.height = 16;
+        thumb.className = 'te-thumb';
+        const tCtx = thumb.getContext('2d');
+        tCtx.imageSmoothingEnabled = false;
+        if (this.images[name]) tCtx.drawImage(this.images[name], 0, 0);
+
+        const label = document.createElement('span');
+        label.textContent = name;
+
+        item.appendChild(thumb);
+        item.appendChild(label);
+        item.addEventListener('click', () => this._selectTexture(name));
+        this.fileList.appendChild(item);
+      }
+    };
+
+    addSection('Blocks', this.textureNames);
+    if (this.mobTextureNames.length > 0) {
+      addSection('Mobs', this.mobTextureNames);
     }
 
     // Auto-select first
@@ -508,41 +529,46 @@ export class TextureEditor {
   _save() {
     if (!this.editCanvas || !this.currentName) return;
 
-    const atlasCtx = this.atlas.canvas.getContext('2d');
-    atlasCtx.imageSmoothingEnabled = false;
+    const isMobTexture = this.mobTextureNames.includes(this.currentName);
 
-    // Build reverse map: texture name -> list of atlas slot indices
-    // Replicate the same iteration order as TextureAtlas.load()
-    let idx = 0;
-    for (const btStr of Object.keys(BlockData)) {
-      const bt = Number(btStr);
-      if (bt === BlockType.AIR) continue;
-      const faces = TEXTURE_FILES[bt];
-      if (!faces) continue;
+    // Update block atlas only for block textures
+    if (!isMobTexture) {
+      const atlasCtx = this.atlas.canvas.getContext('2d');
+      atlasCtx.imageSmoothingEnabled = false;
 
-      if (faces.all) {
-        if (faces.all === this.currentName) {
-          const col = idx % ATLAS_COLS;
-          const row = Math.floor(idx / ATLAS_COLS);
-          atlasCtx.clearRect(col * TEX_SIZE, row * TEX_SIZE, TEX_SIZE, TEX_SIZE);
-          atlasCtx.drawImage(this.editCanvas, col * TEX_SIZE, row * TEX_SIZE, TEX_SIZE, TEX_SIZE);
-        }
-        idx++;
-      } else {
-        for (const face of ['top', 'bottom', 'side']) {
-          if (faces[face] === this.currentName) {
+      // Build reverse map: texture name -> list of atlas slot indices
+      // Replicate the same iteration order as TextureAtlas.load()
+      let idx = 0;
+      for (const btStr of Object.keys(BlockData)) {
+        const bt = Number(btStr);
+        if (bt === BlockType.AIR) continue;
+        const faces = TEXTURE_FILES[bt];
+        if (!faces) continue;
+
+        if (faces.all) {
+          if (faces.all === this.currentName) {
             const col = idx % ATLAS_COLS;
             const row = Math.floor(idx / ATLAS_COLS);
             atlasCtx.clearRect(col * TEX_SIZE, row * TEX_SIZE, TEX_SIZE, TEX_SIZE);
             atlasCtx.drawImage(this.editCanvas, col * TEX_SIZE, row * TEX_SIZE, TEX_SIZE, TEX_SIZE);
           }
           idx++;
+        } else {
+          for (const face of ['top', 'bottom', 'side']) {
+            if (faces[face] === this.currentName) {
+              const col = idx % ATLAS_COLS;
+              const row = Math.floor(idx / ATLAS_COLS);
+              atlasCtx.clearRect(col * TEX_SIZE, row * TEX_SIZE, TEX_SIZE, TEX_SIZE);
+              atlasCtx.drawImage(this.editCanvas, col * TEX_SIZE, row * TEX_SIZE, TEX_SIZE, TEX_SIZE);
+            }
+            idx++;
+          }
         }
       }
-    }
 
-    // Mark texture for GPU re-upload
-    this.atlas.texture.needsUpdate = true;
+      // Mark texture for GPU re-upload
+      this.atlas.texture.needsUpdate = true;
+    }
 
     // Persist to localStorage and update stored image
     const dataURL = this.editCanvas.toDataURL('image/png');
@@ -559,6 +585,11 @@ export class TextureEditor {
       tCtx.clearRect(0, 0, 16, 16);
       tCtx.imageSmoothingEnabled = false;
       tCtx.drawImage(this.editCanvas, 0, 0, 16, 16);
+    }
+
+    // Reload mob textures if this is a mob texture
+    if (this.mobTextureNames.includes(this.currentName)) {
+      reloadMobTextures();
     }
 
     // Rebuild all chunk meshes so the world updates

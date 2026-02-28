@@ -71,6 +71,12 @@ export class Sky {
     scene.fog = new THREE.FogExp2(0x88bbff, 0.005);
   }
 
+  isNight() {
+    if (this.alwaysDay) return false;
+    const sunAngle = this.time * Math.PI * 2;
+    return Math.sin(sunAngle) < 0;
+  }
+
   update(dt, playerPos) {
     if (!this.alwaysDay) {
       this.time += dt * 0.01; // Slow day/night cycle
@@ -104,6 +110,8 @@ export class Sky {
     const fogDay = new THREE.Color(0x88bbff);
     const fogNight = new THREE.Color(0x0a0a2e);
     this.scene.fog.color = fogDay.clone().lerp(fogNight, 1 - dayFactor);
+
+    this.dayFactor = dayFactor;
 
     // Keep sky centered on player
     if (playerPos) {
