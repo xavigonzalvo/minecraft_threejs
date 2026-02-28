@@ -43,6 +43,7 @@ export class UI {
     });
 
     document.addEventListener('gamemode-change', () => {
+      this.inventory.materializeCreativeBlocks();
       this._updateHealthBarVisibility();
       this._buildHotbar();
     });

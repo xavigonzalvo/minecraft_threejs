@@ -127,6 +127,31 @@ export class Inventory {
     return (this.blockCounts.get(blockType) || 0) > 0;
   }
 
+  /** Convert creative infinites to 64 stacks when switching to survival */
+  materializeCreativeBlocks() {
+    let changed = false;
+    // Give 64 of each hotbar block that has no count
+    for (const bt of this.hotbarBlocks) {
+      if (bt !== BlockType.AIR && (this.blockCounts.get(bt) || 0) <= 0) {
+        this.addBlock(bt, 64);
+        changed = true;
+      }
+    }
+    // Convert any Infinity personal slots to 64
+    for (let i = 0; i < MAIN_SLOTS; i++) {
+      const slot = this.personalSlots[i];
+      if (slot && (slot.count === Infinity || slot.count <= 0)) {
+        slot.count = 64;
+        changed = true;
+      }
+    }
+    if (changed) {
+      this._savePersonal();
+      this._syncCountsFromPersonal();
+      document.dispatchEvent(new Event('hotbar-changed'));
+    }
+  }
+
   getCount(blockType) {
     return this.blockCounts.get(blockType) || 0;
   }

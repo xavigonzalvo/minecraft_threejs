@@ -8,7 +8,9 @@ export class Menu {
 
     this.titleScreen = document.getElementById('title-screen');
     this.pauseMenu = document.getElementById('pause-menu');
+    this.settingsMenu = document.getElementById('settings-menu');
     this.loadingScreen = document.getElementById('loading');
+    this._settingsFrom = null; // tracks where settings was opened from
 
     // Button handlers
     document.getElementById('btn-play').addEventListener('click', () => {
@@ -22,6 +24,24 @@ export class Menu {
     });
     document.getElementById('btn-new-world').addEventListener('click', () => {
       document.dispatchEvent(new Event('new-world'));
+    });
+
+    // Texture Editor from title screen
+    document.getElementById('btn-edit-textures-title').addEventListener('click', () => {
+      document.dispatchEvent(new Event('open-texture-editor'));
+    });
+
+    // Settings buttons
+    document.getElementById('btn-settings-title').addEventListener('click', () => {
+      this._settingsFrom = 'title';
+      this.setState('settings');
+    });
+    document.getElementById('btn-settings-pause').addEventListener('click', () => {
+      this._settingsFrom = 'paused';
+      this.setState('settings');
+    });
+    document.getElementById('btn-settings-back').addEventListener('click', () => {
+      this.setState(this._settingsFrom || 'title');
     });
 
     // Pointer lock change: if lock lost while playing, transition to paused
@@ -116,6 +136,7 @@ export class Menu {
     this.loadingScreen.classList.add('hidden');
     this.titleScreen.classList.add('hidden');
     this.pauseMenu.classList.add('hidden');
+    this.settingsMenu.classList.add('hidden');
 
     // Show the correct overlay
     switch (state) {
@@ -127,6 +148,9 @@ export class Menu {
         break;
       case 'paused':
         this.pauseMenu.classList.remove('hidden');
+        break;
+      case 'settings':
+        this.settingsMenu.classList.remove('hidden');
         break;
       case 'playing':
         // All overlays hidden

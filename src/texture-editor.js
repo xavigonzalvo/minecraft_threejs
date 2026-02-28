@@ -425,9 +425,12 @@ export class TextureEditor {
     this._resizeObserver = new ResizeObserver(() => this._render());
     this._resizeObserver.observe(this.canvasContainer);
 
-    // HUD button
+    // HUD button (pause menu)
     const btn = document.getElementById('btn-edit-textures');
     if (btn) btn.addEventListener('click', () => this.show());
+
+    // Title screen event
+    document.addEventListener('open-texture-editor', () => this.show());
   }
 
   _onMouseDown(e) {
@@ -615,9 +618,19 @@ export class TextureEditor {
   // ── Show / Hide ──
 
   show() {
-    this.overlay.style.display = 'flex';
-    // Hide the pause menu while editor is open
+    // Remember which menu was active before opening
+    this._returnTo = null;
+    const titleScreen = document.getElementById('title-screen');
     const pauseMenu = document.getElementById('pause-menu');
+    if (titleScreen && !titleScreen.classList.contains('hidden')) {
+      this._returnTo = 'title';
+    } else if (pauseMenu && !pauseMenu.classList.contains('hidden')) {
+      this._returnTo = 'paused';
+    }
+
+    this.overlay.style.display = 'flex';
+    // Hide menus while editor is open
+    if (titleScreen) titleScreen.classList.add('hidden');
     if (pauseMenu) pauseMenu.classList.add('hidden');
     // Recalculate zoom now that the container has layout dimensions
     requestAnimationFrame(() => {
@@ -628,8 +641,14 @@ export class TextureEditor {
 
   hide() {
     this.overlay.style.display = 'none';
-    // Return to pause menu so the player can resume from there
-    const pauseMenu = document.getElementById('pause-menu');
-    if (pauseMenu) pauseMenu.classList.remove('hidden');
+    // Return to the menu we came from
+    const target = this._returnTo || 'paused';
+    if (target === 'title') {
+      const titleScreen = document.getElementById('title-screen');
+      if (titleScreen) titleScreen.classList.remove('hidden');
+    } else {
+      const pauseMenu = document.getElementById('pause-menu');
+      if (pauseMenu) pauseMenu.classList.remove('hidden');
+    }
   }
 }
