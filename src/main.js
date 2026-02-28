@@ -15,6 +15,7 @@ import { GameMode } from './gamemode.js';
 import { ItemManager } from './items.js';
 import { Sound } from './sound.js';
 import { AmbientMusic } from './ambient-music.js';
+import { MobManager } from './mob-manager.js';
 
 // Register service worker only in production builds
 if ('serviceWorker' in navigator) {
@@ -183,6 +184,9 @@ async function init() {
     rebuildDirtyChunks();
   }, inventory, itemManager);
 
+  const mobManager = new MobManager(scene, world);
+  interaction.setMobManager(mobManager);
+
   const sound = new Sound();
   const ambientMusic = new AmbientMusic();
 
@@ -288,6 +292,7 @@ async function init() {
     // Update systems
     if (touchControls) touchControls.update(dt);
     player.update(dt);
+    mobManager.update(dt, player);
     interaction.update(dt);
     itemManager.update(dt, player);
     if (world.updateWater(dt)) {

@@ -47,6 +47,10 @@ export class Sound {
     document.addEventListener('mining-progress', (e) => this._onMiningProgress(e));
     document.addEventListener('block-break', (e) => this._onBlockBreak(e));
     document.addEventListener('item-pickup', () => this._playPickup());
+    document.addEventListener('mob-hit', () => this._playMobHit());
+    document.addEventListener('mob-death', () => this._playMobDeath());
+    document.addEventListener('mob-groan', () => this._playMobGroan());
+    document.addEventListener('mob-hit-player', () => this._playMobHitPlayer());
   }
 
   _initOnInteraction() {
@@ -230,6 +234,130 @@ export class Sound {
 
   _onBlockBreak(e) {
     const blockType = e.detail?.blockType;
-    this._playBreak(getMaterial(blockType));
+    if (blockType !== undefined) {
+      this._playBreak(getMaterial(blockType));
+    }
+  }
+
+  // Mob hit: short low noise burst
+  _playMobHit() {
+    const ctx = this._ensureContext();
+    const now = ctx.currentTime;
+    const duration = 0.08;
+
+    const bufferSize = Math.ceil(ctx.sampleRate * duration);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 600 + Math.random() * 200;
+    filter.Q.value = 1.0;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(this._volume * 0.8, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(now);
+    source.stop(now + duration);
+  }
+
+  // Mob death: descending low tone
+  _playMobDeath() {
+    const ctx = this._ensureContext();
+    const now = ctx.currentTime;
+    const duration = 0.4;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(200, now);
+    osc.frequency.exponentialRampToValueAtTime(60, now + duration);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(this._volume * 0.5, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + duration);
+  }
+
+  // Zombie groan: low oscillator with vibrato
+  _playMobGroan() {
+    const ctx = this._ensureContext();
+    const now = ctx.currentTime;
+    const duration = 0.6;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(80 + Math.random() * 30, now);
+
+    // Vibrato LFO
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5 + Math.random() * 3;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 15;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 300;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(this._volume * 0.3, now);
+    gain.gain.setValueAtTime(this._volume * 0.3, now + duration * 0.7);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    lfo.start(now);
+    osc.stop(now + duration);
+    lfo.stop(now + duration);
+  }
+
+  // Player hit by mob: short impact sound
+  _playMobHitPlayer() {
+    const ctx = this._ensureContext();
+    const now = ctx.currentTime;
+    const duration = 0.1;
+
+    const bufferSize = Math.ceil(ctx.sampleRate * duration);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 400;
+    filter.Q.value = 2.0;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(this._volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(now);
+    source.stop(now + duration);
   }
 }

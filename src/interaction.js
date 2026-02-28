@@ -13,9 +13,11 @@ export class Interaction {
     this.onBlockChange = onBlockChange;
     this.inventory = inventory;
     this.itemManager = itemManager;
+    this.mobManager = null;
     this.selectedSlot = 0;
     this.breakCooldown = 0;
     this.placeCooldown = 0;
+    this.attackCooldown = 0;
     this.isTouch = false;
     this._touchScreenPos = null;
 
@@ -51,6 +53,56 @@ export class Interaction {
       this.inventory.setSelectedSlot(this.selectedSlot);
       this._updateHotbar();
     });
+  }
+
+  setMobManager(manager) {
+    this.mobManager = manager;
+  }
+
+  // Check if ray hits any mob before reaching a block
+  _raycastMobs(origin, dir) {
+    if (!this.mobManager) return null;
+
+    const mobs = this.mobManager.getMobs();
+    let closestHit = null;
+    let closestDist = REACH;
+
+    for (const mob of mobs) {
+      const aabb = mob.getAABB();
+      const hit = this._rayAABBIntersect(origin, dir, aabb);
+      if (hit !== null && hit < closestDist) {
+        closestDist = hit;
+        closestHit = mob;
+      }
+    }
+
+    return closestHit ? { mob: closestHit, distance: closestDist } : null;
+  }
+
+  _rayAABBIntersect(origin, dir, aabb) {
+    let tmin = 0;
+    let tmax = REACH;
+
+    for (let i = 0; i < 3; i++) {
+      const axis = ['x', 'y', 'z'][i];
+      const min = [aabb.minX, aabb.minY, aabb.minZ][i];
+      const max = [aabb.maxX, aabb.maxY, aabb.maxZ][i];
+      const o = origin[axis];
+      const d = dir[axis];
+
+      if (Math.abs(d) < 1e-8) {
+        if (o < min || o > max) return null;
+      } else {
+        let t1 = (min - o) / d;
+        let t2 = (max - o) / d;
+        if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+        tmin = Math.max(tmin, t1);
+        tmax = Math.min(tmax, t2);
+        if (tmin > tmax) return null;
+      }
+    }
+
+    return tmin;
   }
 
   _setupInput() {
@@ -170,12 +222,40 @@ export class Interaction {
 
     this.breakCooldown = Math.max(0, this.breakCooldown - dt);
     this.placeCooldown = Math.max(0, this.placeCooldown - dt);
+    this.attackCooldown = Math.max(0, this.attackCooldown - dt);
 
     // On touch devices, only raycast when there's an active touch target
     if (this.isTouch && !this._touchScreenPos) {
       this.highlight.visible = false;
       this._resetMining();
       return;
+    }
+
+    // Check mob hit on left click (priority over block mining)
+    if (this._mouseDown[0] && this.attackCooldown <= 0 && this.mobManager) {
+      const origin = this._touchScreenPos
+        ? this.player.camera.position.clone()
+        : this.player.camera.position.clone();
+      let dir;
+      if (this._touchScreenPos) {
+        const ndcX = (this._touchScreenPos.x / window.innerWidth) * 2 - 1;
+        const ndcY = -(this._touchScreenPos.y / window.innerHeight) * 2 + 1;
+        const far = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(this.player.camera);
+        dir = far.sub(origin.clone()).normalize();
+      } else {
+        dir = this.player.getForwardDirection();
+      }
+      const mobHit = this._raycastMobs(origin, dir);
+      if (mobHit) {
+        const knockDir = new THREE.Vector3(
+          mobHit.mob.position.x - this.player.position.x,
+          0,
+          mobHit.mob.position.z - this.player.position.z
+        );
+        mobHit.mob.damage(4, knockDir);
+        this.attackCooldown = 0.4;
+        document.dispatchEvent(new CustomEvent('block-break', { detail: {} })); // trigger arm swing
+      }
     }
 
     const ray = this._touchScreenPos
