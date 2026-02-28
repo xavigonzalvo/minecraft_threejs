@@ -48,12 +48,15 @@ export class Menu {
     document.addEventListener('pointerlockchange', () => {
       if (this.isTouch) return;
       const locked = document.pointerLockElement === this.canvas;
-      if (locked && (this.state === 'title' || this.state === 'paused' || this.state === 'inventory')) {
+      if (locked && (this.state === 'title' || this.state === 'paused' || this.state === 'inventory' || this.state === 'crafting')) {
         this.setState('playing');
       } else if (!locked && this.state === 'playing') {
         if (this._inventoryRequested) {
           this._inventoryRequested = false;
           this.setState('inventory');
+        } else if (this._craftingRequested) {
+          this._craftingRequested = false;
+          this.setState('crafting');
         } else {
           this.setState('paused');
         }
@@ -83,6 +86,11 @@ export class Menu {
         // After closing inventory, go to paused instead of playing
         this._pauseAfterInventory = true;
       }
+      // ESC while in crafting → close crafting and go to paused
+      if (e.code === 'Escape' && this.state === 'crafting') {
+        document.dispatchEvent(new Event('crafting-close'));
+        this.setState('paused');
+      }
     });
 
     // Listen for inventory-close event
@@ -96,6 +104,16 @@ export class Menu {
         this.openInventory();
       }
     });
+
+    // Crafting table events
+    document.addEventListener('open-crafting', () => {
+      if (this.state === 'playing') {
+        this.openCrafting();
+      }
+    });
+    document.addEventListener('crafting-close', () => {
+      this.closeCrafting();
+    });
   }
 
   openInventory() {
@@ -105,6 +123,26 @@ export class Menu {
     } else {
       this._inventoryRequested = true;
       document.exitPointerLock();
+    }
+  }
+
+  openCrafting() {
+    if (this.isTouch) {
+      this.player.active = false;
+      this.setState('crafting');
+    } else {
+      this._craftingRequested = true;
+      document.exitPointerLock();
+    }
+  }
+
+  closeCrafting() {
+    if (this.state !== 'crafting') return;
+    if (this.isTouch) {
+      this.player.active = true;
+      this.setState('playing');
+    } else {
+      this.canvas.requestPointerLock();
     }
   }
 
@@ -158,10 +196,13 @@ export class Menu {
       case 'inventory':
         // All menu overlays hidden; inventory overlay managed externally
         break;
+      case 'crafting':
+        // All menu overlays hidden; crafting overlay managed externally
+        break;
     }
 
-    // Toggle HUD visibility — keep hotbar visible during inventory
-    document.body.classList.toggle('game-active', state === 'playing' || state === 'inventory');
+    // Toggle HUD visibility — keep hotbar visible during inventory/crafting
+    document.body.classList.toggle('game-active', state === 'playing' || state === 'inventory' || state === 'crafting');
 
     // Dispatch state change for touch controls
     document.dispatchEvent(new CustomEvent('game-state-change', { detail: { state } }));

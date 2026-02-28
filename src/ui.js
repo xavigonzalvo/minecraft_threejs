@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BlockData, BlockType } from './blocks.js';
 import { GameMode } from './gamemode.js';
+import { isItemType, getItemOrBlockData } from './crafting.js';
 
 export class UI {
   constructor(atlas, inventory, playerArm, camera) {
@@ -116,13 +117,21 @@ export class UI {
         previewCanvas.width = 32;
         previewCanvas.height = 32;
         const ctx = previewCanvas.getContext('2d');
-
-        const [u, v] = this.atlas.getUV(bt, 2);
-        const srcX = Math.floor(u * this.atlas.canvas.width);
-        const srcY = Math.floor(v * this.atlas.canvas.height);
-        const srcSize = Math.floor(this.atlas.tileSize * this.atlas.canvas.width);
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(this.atlas.canvas, srcX, srcY, srcSize, srcSize, 0, 0, 32, 32);
+
+        if (isItemType(bt)) {
+          // Draw item sprite from inventory's item image cache
+          const img = this.inventory.itemImages[bt];
+          if (img && img.complete) {
+            ctx.drawImage(img, 0, 0, 32, 32);
+          }
+        } else {
+          const [u, v] = this.atlas.getUV(bt, 2);
+          const srcX = Math.floor(u * this.atlas.canvas.width);
+          const srcY = Math.floor(v * this.atlas.canvas.height);
+          const srcSize = Math.floor(this.atlas.tileSize * this.atlas.canvas.width);
+          ctx.drawImage(this.atlas.canvas, srcX, srcY, srcSize, srcSize, 0, 0, 32, 32);
+        }
 
         slot.appendChild(previewCanvas);
 
@@ -155,7 +164,8 @@ export class UI {
 
   _updateHand() {
     const bt = this.inventory.getHotbarBlock(this.inventory.selectedSlot);
-    this.playerArm.setVisible(bt === BlockType.AIR);
+    // Show arm when holding nothing or an item (tools don't have block models)
+    this.playerArm.setVisible(bt === BlockType.AIR || isItemType(bt));
   }
 
   update(dt, player, world, chunkCount) {

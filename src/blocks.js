@@ -21,6 +21,7 @@ export const BlockType = {
   WATER_25: 17,
   WATER_50: 18,
   WATER_75: 19,
+  CRAFTING_TABLE: 20,
 };
 
 // Block properties — drops: what block type is added to inventory when broken (null = nothing)
@@ -46,6 +47,7 @@ export const BlockData = {
   [BlockType.WATER_25]:    { name: 'Water',       solid: false, transparent: true,  drops: null,                   hardness: 0 },
   [BlockType.WATER_50]:    { name: 'Water',       solid: false, transparent: true,  drops: null,                   hardness: 0 },
   [BlockType.WATER_75]:    { name: 'Water',       solid: false, transparent: true,  drops: null,                   hardness: 0 },
+  [BlockType.CRAFTING_TABLE]: { name: 'Crafting Table', solid: true, transparent: false, drops: BlockType.CRAFTING_TABLE, hardness: 1.0 },
 };
 
 export function isWaterBlock(type) {
@@ -73,6 +75,7 @@ export const HOTBAR_BLOCKS = [
   BlockType.SAND,
   BlockType.GLASS,
   BlockType.BRICK,
+  BlockType.CRAFTING_TABLE,
 ];
 
 const TEX_SIZE = 16;
@@ -95,6 +98,7 @@ export const TEXTURE_FILES = {
   [BlockType.SNOW]:        { all: 'snow' },
   [BlockType.GLASS]:       { all: 'glass' },
   [BlockType.BRICK]:       { all: 'brick' },
+  [BlockType.CRAFTING_TABLE]: { top: 'crafting_table_top', bottom: 'oak_planks', side: 'crafting_table_side' },
 };
 
 // Mob texture names (editable in texture editor)

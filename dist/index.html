@@ -467,6 +467,43 @@
       text-align: center;
       margin-top: 4px;
     }
+    .inv-trash {
+      width: 48px; height: 48px;
+      background: #555;
+      border: 2px solid;
+      border-color: #888 #333 #333 #888;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      align-self: flex-end;
+      margin-top: 4px;
+      font-size: 22px;
+      color: #aaa;
+      position: relative;
+    }
+    .inv-trash:hover {
+      border-color: #f66;
+      background: #6b3b3b;
+      color: #f88;
+    }
+    .inv-trash-label {
+      display: none;
+      position: absolute;
+      top: -28px;
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      font-size: 11px;
+      background: rgba(40,0,0,0.92);
+      padding: 2px 8px;
+      border: 1px solid #8a3a3a;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .inv-trash:hover .inv-trash-label {
+      display: block;
+    }
     /* Cursor: floating block following mouse when held */
     .inv-cursor {
       position: fixed;
@@ -490,8 +527,98 @@
       font-weight: bold;
     }
 
+    /* ── Crafting Overlay ── */
+    #crafting-overlay {
+      position: fixed; inset: 0;
+      z-index: 90;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.80);
+      color: #fff;
+      font-family: 'Segoe UI', monospace;
+    }
+    .crafting-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #3a3a3a;
+      border: 3px solid #555;
+      padding: 16px;
+      max-height: 90vh;
+      position: relative;
+      align-items: center;
+    }
+    .craft-area {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .craft-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 48px);
+      gap: 2px;
+    }
+    .craft-arrow {
+      font-size: 32px;
+      color: #aaa;
+      user-select: none;
+    }
+    .craft-output {
+      width: 56px; height: 56px;
+      background: #6b6b4b;
+      border: 2px solid;
+      border-color: #aa8 #554 #554 #aa8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .craft-output:hover {
+      border-color: #ff8;
+      background: #7b7b5b;
+    }
+    .craft-inventory-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border-top: 2px solid #666;
+      padding-top: 8px;
+    }
+    /* 2x2 mini crafting grid in inventory screen */
+    .inv-craft-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-top: 2px solid #666;
+      padding-top: 8px;
+      margin-top: 4px;
+    }
+    .inv-craft-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 48px);
+      gap: 2px;
+    }
+    .inv-craft-arrow {
+      font-size: 28px;
+      color: #aaa;
+      user-select: none;
+    }
+    .inv-craft-output {
+      width: 56px; height: 56px;
+      background: #6b6b4b;
+      border: 2px solid;
+      border-color: #aa8 #554 #554 #aa8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .inv-craft-output:hover {
+      border-color: #ff8;
+      background: #7b7b5b;
+    }
+
   </style>
-  <script type="module" crossorigin src="/assets/index-vbGV2H_D.js"></script>
+  <script type="module" crossorigin src="/assets/index-CDoRGgIW.js"></script>
 </head>
 <body>
   <div id="rotate-device">

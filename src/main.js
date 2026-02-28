@@ -301,6 +301,7 @@ async function init() {
       const state = e.detail.state;
       if (state === 'playing') {
         inventory.hide();
+        inventory.hideCrafting();
         touchControls.show();
         // Request fullscreen + lock to landscape
         if (document.documentElement.requestFullscreen) {
@@ -310,9 +311,15 @@ async function init() {
         }
       } else if (state === 'inventory') {
         inventory.show();
+        inventory.hideCrafting();
+        touchControls.hide();
+      } else if (state === 'crafting') {
+        inventory.hide();
+        inventory.showCrafting();
         touchControls.hide();
       } else {
         inventory.hide();
+        inventory.hideCrafting();
         touchControls.hide();
       }
     });
@@ -325,8 +332,13 @@ async function init() {
       const state = e.detail.state;
       if (state === 'inventory') {
         inventory.show();
+        inventory.hideCrafting();
+      } else if (state === 'crafting') {
+        inventory.hide();
+        inventory.showCrafting();
       } else {
         inventory.hide();
+        inventory.hideCrafting();
       }
     });
   }

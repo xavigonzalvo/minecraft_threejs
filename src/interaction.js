@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BlockType, BlockData, isWaterBlock } from './blocks.js';
 import { GameMode } from './gamemode.js';
+import { isItemType, ItemData } from './crafting.js';
 
 const REACH = 6;
 const RAY_STEP = 0.02;
@@ -287,7 +288,17 @@ export class Interaction {
             // Changed target — reset
             this._miningTarget = { x: ray.x, y: ray.y, z: ray.z };
             this._miningProgress = 0;
-            this._miningHardness = hardness;
+            // Check if held tool speeds up mining
+            let effectiveHardness = hardness;
+            const heldType = this.inventory.getHotbarBlock(this.selectedSlot);
+            if (isItemType(heldType)) {
+              const itemInfo = ItemData[heldType];
+              if (itemInfo && itemInfo.miningMultiplier && itemInfo.effectiveOn &&
+                  itemInfo.effectiveOn.includes(ray.blockType)) {
+                effectiveHardness = hardness / itemInfo.miningMultiplier;
+              }
+            }
+            this._miningHardness = effectiveHardness;
           }
 
           this._miningProgress += dt;
@@ -317,11 +328,18 @@ export class Interaction {
         }
       }
 
+      // Right-click on crafting table → open crafting UI
+      if (this._mouseDown[2] && this.placeCooldown <= 0 && ray.blockType === BlockType.CRAFTING_TABLE) {
+        this._mouseDown[2] = false;
+        this.placeCooldown = 0.25;
+        document.dispatchEvent(new Event('open-crafting'));
+      }
+
       // Place block (right click)
       if (this._mouseDown[2] && this.placeCooldown <= 0) {
         if (ray.prevX !== -999) {
           const placeType = this.inventory.getHotbarBlock(this.selectedSlot);
-          if (placeType !== BlockType.AIR && this.inventory.canPlace(placeType)) {
+          if (placeType !== BlockType.AIR && !isItemType(placeType) && this.inventory.canPlace(placeType)) {
             // Don't place inside player
             const px = Math.floor(this.player.position.x);
             const py1 = Math.floor(this.player.position.y - 1.62);
@@ -348,7 +366,7 @@ export class Interaction {
   placeBlockAtScreen(screenX, screenY) {
     if (this.placeCooldown > 0) return;
     const placeType = this.inventory.getHotbarBlock(this.selectedSlot);
-    if (placeType === BlockType.AIR || !this.inventory.canPlace(placeType)) return;
+    if (placeType === BlockType.AIR || isItemType(placeType) || !this.inventory.canPlace(placeType)) return;
     const ray = this.raycastFromScreen(screenX, screenY);
     if (!ray.hit || ray.prevX === -999) return;
     const px = Math.floor(this.player.position.x);

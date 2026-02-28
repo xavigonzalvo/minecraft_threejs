@@ -18,6 +18,13 @@ export class TextureEditor {
       }
     }
 
+    // Item textures (not in block atlas but editable)
+    this.itemTextureNames = [];
+    const itemTexNames = ['stick', 'wooden_axe'];
+    for (const name of itemTexNames) {
+      if (!seen.has(name)) { seen.add(name); this.itemTextureNames.push(name); }
+    }
+
     // Mob textures
     this.mobTextureNames = [];
     for (const name of MOB_TEXTURE_FILES) {
@@ -47,7 +54,7 @@ export class TextureEditor {
   // ── Image loading ──
 
   async _loadAllImages() {
-    const allNames = [...this.textureNames, ...this.mobTextureNames];
+    const allNames = [...this.textureNames, ...this.itemTextureNames, ...this.mobTextureNames];
     await Promise.all(allNames.map(async (name) => {
       const img = new Image();
       // Use saved version from localStorage if available
@@ -251,6 +258,9 @@ export class TextureEditor {
     };
 
     addSection('Blocks', this.textureNames);
+    if (this.itemTextureNames.length > 0) {
+      addSection('Items', this.itemTextureNames);
+    }
     if (this.mobTextureNames.length > 0) {
       addSection('Mobs', this.mobTextureNames);
     }
@@ -533,9 +543,10 @@ export class TextureEditor {
     if (!this.editCanvas || !this.currentName) return;
 
     const isMobTexture = this.mobTextureNames.includes(this.currentName);
+    const isItemTexture = this.itemTextureNames.includes(this.currentName);
 
     // Update block atlas only for block textures
-    if (!isMobTexture) {
+    if (!isMobTexture && !isItemTexture) {
       const atlasCtx = this.atlas.canvas.getContext('2d');
       atlasCtx.imageSmoothingEnabled = false;
 
