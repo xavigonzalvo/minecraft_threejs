@@ -16,6 +16,7 @@ import { ItemManager } from './items.js';
 import { Sound } from './sound.js';
 import { AmbientMusic } from './ambient-music.js';
 import { MobManager } from './mob-manager.js';
+import { hasSavedWorld, saveWorld, loadWorld, deleteWorld } from './save.js';
 
 // Register service worker only in production builds
 if ('serviceWorker' in navigator) {
@@ -31,7 +32,6 @@ if ('serviceWorker' in navigator) {
 
 // ── Configuration ──
 const RENDER_DISTANCE = 8; // chunks in each direction
-const SEED = Math.floor(Math.random() * 999999);
 
 // ── Three.js Setup ──
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -55,9 +55,9 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ── Initialize Systems ──
 const atlas = new TextureAtlas();
-const world = new World(SEED);
+let world;
 let mesher;
-const player = new Player(camera, world, renderer.domElement);
+let player;
 const sky = new Sky(scene);
 
 // Track loaded chunk meshes
@@ -130,6 +130,14 @@ async function init() {
   const loadingEl = document.getElementById('loading');
   const progressEl = document.getElementById('load-progress');
 
+  // Determine seed: reuse saved or generate new
+  const savedSeed = localStorage.getItem('world_seed');
+  const SEED = savedSeed !== null ? Number(savedSeed) : Math.floor(Math.random() * 999999);
+  localStorage.setItem('world_seed', String(SEED));
+
+  world = new World(SEED);
+  player = new Player(camera, world, renderer.domElement);
+
   // Load textures from PNG files
   await atlas.load();
   mesher = new ChunkMesher(world, atlas);
@@ -141,13 +149,30 @@ async function init() {
     rebuildDirtyChunks();
   });
 
-  // Generate initial chunks with loading progress
+  // Load saved world data or generate fresh
+  let savedPlayerState = null;
+  let savedMobData = null;
+  const hasSave = hasSavedWorld() && savedSeed !== null;
+
+  if (hasSave) {
+    const saveData = await loadWorld(world);
+    savedPlayerState = saveData.playerState;
+    savedMobData = saveData.mobData;
+    progressEl.style.width = '50%';
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  // Generate initial chunks with loading progress (skip already-loaded saved chunks)
   const initialRadius = 5;
+  const spawnCX = savedPlayerState?.position
+    ? Math.floor(savedPlayerState.position.x / 16) : 0;
+  const spawnCZ = savedPlayerState?.position
+    ? Math.floor(savedPlayerState.position.z / 16) : 0;
   const chunkList = [];
   for (let dx = -initialRadius; dx <= initialRadius; dx++) {
     for (let dz = -initialRadius; dz <= initialRadius; dz++) {
       if (dx * dx + dz * dz <= initialRadius * initialRadius) {
-        chunkList.push([dx, dz]);
+        chunkList.push([spawnCX + dx, spawnCZ + dz]);
       }
     }
   }
@@ -156,9 +181,12 @@ async function init() {
   const total = chunkList.length;
 
   for (const [cx, cz] of chunkList) {
-    world.generateChunk(cx, cz);
+    if (!world.chunks.has(world.chunkKey(cx, cz))) {
+      world.generateChunk(cx, cz);
+    }
     loaded++;
-    progressEl.style.width = `${(loaded / total) * 100}%`;
+    const pct = hasSave ? 50 + (loaded / total) * 50 : (loaded / total) * 100;
+    progressEl.style.width = `${pct}%`;
     // Yield to update UI
     if (loaded % 5 === 0) {
       await new Promise(r => setTimeout(r, 0));
@@ -166,16 +194,22 @@ async function init() {
   }
 
   // Place villages in the initial loaded area
-  world.placeVillagesNear(0, 0);
+  world.placeVillagesNear(spawnCX, spawnCZ);
 
-  // Fill any air gaps adjacent to water bodies
-  world.seedInitialWaterFlow();
+  // Fill any air gaps adjacent to water bodies (only on fresh world)
+  if (!hasSave) {
+    world.seedInitialWaterFlow();
+  }
 
   rebuildDirtyChunks();
 
-  // Spawn player
-  const spawn = world.getSpawnPoint();
-  player.spawn(spawn);
+  // Spawn or restore player
+  if (savedPlayerState && savedPlayerState.position) {
+    player.restoreState(savedPlayerState);
+  } else {
+    const spawn = world.getSpawnPoint();
+    player.spawn(spawn);
+  }
 
   // Setup inventory, items, and interaction after world is loaded
   const inventory = new Inventory(atlas);
@@ -186,6 +220,24 @@ async function init() {
 
   const mobManager = new MobManager(scene, world, sky);
   interaction.setMobManager(mobManager);
+
+  // Restore saved mobs
+  if (savedMobData && savedMobData.length > 0) {
+    mobManager.deserialize(savedMobData);
+  }
+
+  // Auto-save: on page unload and every 30 seconds
+  const doSave = () => {
+    saveWorld(world, player, mobManager).catch(() => {});
+  };
+  window.addEventListener('beforeunload', doSave);
+  setInterval(doSave, 30000);
+
+  // Listen for new-world request from menu
+  document.addEventListener('new-world', async () => {
+    await deleteWorld();
+    location.reload();
+  });
 
   const sound = new Sound();
   const ambientMusic = new AmbientMusic();

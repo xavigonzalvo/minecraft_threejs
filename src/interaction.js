@@ -200,10 +200,11 @@ export class Interaction {
     const blockData = BlockData[ray.blockType];
     const drop = blockData?.drops;
 
-    // Spawn dropped item (survival mode) or add directly (creative)
+    // Add block directly to hotbar (survival mode)
     if (drop !== null && drop !== undefined) {
-      if (GameMode.isSurvival() && this.itemManager) {
-        this.itemManager.spawnItem(ray.x, ray.y, ray.z, drop);
+      if (GameMode.isSurvival() && this.inventory) {
+        this.inventory.addBlock(drop);
+        document.dispatchEvent(new CustomEvent('item-pickup', { detail: { blockType: drop } }));
       }
     }
 

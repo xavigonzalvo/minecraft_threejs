@@ -20,6 +20,9 @@ export class Menu {
     document.getElementById('btn-back-to-title').addEventListener('click', () => {
       this.setState('title');
     });
+    document.getElementById('btn-new-world').addEventListener('click', () => {
+      document.dispatchEvent(new Event('new-world'));
+    });
 
     // Pointer lock change: if lock lost while playing, transition to paused
     document.addEventListener('pointerlockchange', () => {

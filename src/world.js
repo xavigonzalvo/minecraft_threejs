@@ -234,6 +234,13 @@ export class World {
     chunk.dirty = true;
   }
 
+  loadChunkFromData(cx, cz, blocks) {
+    const key = this.chunkKey(cx, cz);
+    const chunk = { cx, cz, blocks, dirty: true, mesh: null, waterMesh: null };
+    this.chunks.set(key, chunk);
+    return chunk;
+  }
+
   getBlock(x, y, z) {
     if (y < 0 || y >= WORLD_HEIGHT) return BlockType.AIR;
     const cx = Math.floor(x / CHUNK_SIZE);

@@ -151,6 +151,33 @@ export class MobManager {
     this.scene.add(zombie.group);
   }
 
+  serialize() {
+    const data = [];
+    for (const mob of this.mobs) {
+      if (mob.dead || mob.removed) continue;
+      data.push({
+        x: mob.position.x,
+        y: mob.position.y,
+        z: mob.position.z,
+        health: mob.health,
+        state: mob.state,
+        yaw: mob.yaw,
+      });
+    }
+    return data;
+  }
+
+  deserialize(data) {
+    for (const entry of data) {
+      const zombie = new Zombie(entry.x, entry.y, entry.z, this.world);
+      zombie.health = entry.health;
+      if (entry.state !== undefined) zombie.state = entry.state;
+      if (entry.yaw !== undefined) zombie.yaw = entry.yaw;
+      this.mobs.push(zombie);
+      this.scene.add(zombie.group);
+    }
+  }
+
   // Get all mob AABBs for raycast checking
   getMobs() {
     return this.mobs.filter(m => !m.dead);

@@ -341,72 +341,154 @@
       position: fixed; inset: 0;
       z-index: 90;
       display: none;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
       background: rgba(0,0,0,0.80);
       color: #fff;
       font-family: 'Segoe UI', monospace;
     }
-    #inventory-overlay h2 {
-      font-size: 28px;
-      margin-bottom: 16px;
-      text-shadow: 2px 2px 0 #000;
+    .inventory-container {
+      display: flex;
+      gap: 12px;
+      background: #3a3a3a;
+      border: 3px solid #555;
+      padding: 12px;
+      max-height: 90vh;
+      position: relative;
     }
-    .inventory-grid {
+    /* Left panel: all blocks catalog */
+    .inv-panel {
+      display: flex;
+      flex-direction: column;
+    }
+    .inv-panel-title {
+      font-size: 14px;
+      color: #aaa;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-shadow: 1px 1px 0 #000;
+    }
+    .inv-catalog {
       display: grid;
-      grid-template-columns: repeat(7, 56px);
+      grid-template-columns: repeat(5, 48px);
+      gap: 2px;
+      overflow-y: auto;
+      max-height: 340px;
+    }
+    /* Right panel: player inventory */
+    .inv-personal {
+      display: flex;
+      flex-direction: column;
       gap: 6px;
     }
-    .inventory-cell {
-      width: 56px; height: 56px;
-      background: rgba(255,255,255,0.08);
-      border: 2px solid rgba(255,255,255,0.15);
+    .inv-main-grid {
+      display: grid;
+      grid-template-columns: repeat(9, 48px);
+      gap: 2px;
+    }
+    .inv-hotbar-separator {
+      height: 2px;
+      background: #666;
+      margin: 2px 0;
+    }
+    .inv-hotbar-grid {
+      display: grid;
+      grid-template-columns: repeat(9, 48px);
+      gap: 2px;
+    }
+    /* Shared cell style */
+    .inv-cell {
+      width: 48px; height: 48px;
+      background: #8b8b8b;
+      border: 2px solid;
+      border-color: #fff #555 #555 #fff;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       position: relative;
-    }
-    .inventory-cell:hover {
-      border-color: #fff;
-      background: rgba(255,255,255,0.18);
-    }
-    .inventory-cell canvas {
-      width: 40px; height: 40px;
       image-rendering: pixelated;
     }
-    .inventory-name {
+    .inv-cell:hover {
+      border-color: #aaf;
+      background: #9b9bab;
+    }
+    .inv-cell.inv-empty {
+      cursor: pointer;
+    }
+    .inv-cell.inv-empty:hover {
+      border-color: #aaf;
+      background: #9b9bab;
+    }
+    .inv-cell canvas {
+      width: 36px; height: 36px;
+      image-rendering: pixelated;
+    }
+    .inv-cell-count {
+      position: absolute;
+      bottom: 1px; right: 3px;
+      font-size: 10px;
+      color: #fff;
+      text-shadow: 1px 1px 0 #000;
+      pointer-events: none;
+      font-weight: bold;
+    }
+    .inv-cell-name {
       display: none;
       position: absolute;
-      bottom: -24px;
+      top: -28px;
       left: 50%;
       transform: translateX(-50%);
       white-space: nowrap;
       font-size: 11px;
-      background: rgba(0,0,0,0.85);
-      padding: 2px 6px;
-      border-radius: 3px;
-      z-index: 5;
+      background: rgba(20,0,40,0.92);
+      padding: 2px 8px;
+      border: 1px solid #5a3a8a;
+      z-index: 10;
       pointer-events: none;
     }
-    .inventory-cell:hover .inventory-name {
+    .inv-cell:hover .inv-cell-name {
       display: block;
-    }
-    .inventory-hint {
-      margin-top: 18px;
-      font-size: 14px;
-      color: #aaa;
     }
     .inventory-close-btn {
       position: absolute;
-      top: 16px; right: 20px;
-      font-size: 32px;
+      top: 4px; right: 8px;
+      font-size: 28px;
       cursor: pointer;
       color: #aaa;
       line-height: 1;
+      z-index: 5;
     }
     .inventory-close-btn:hover { color: #fff; }
+    .inv-hint {
+      font-size: 12px;
+      color: #aaa;
+      text-align: center;
+      margin-top: 4px;
+    }
+    /* Cursor: floating block following mouse when held */
+    .inv-cursor {
+      position: fixed;
+      width: 36px; height: 36px;
+      pointer-events: none;
+      z-index: 200;
+      image-rendering: pixelated;
+      opacity: 0.9;
+      filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.6));
+    }
+    .inv-cursor canvas {
+      width: 36px; height: 36px;
+      image-rendering: pixelated;
+    }
+    .inv-cursor .inv-cell-count {
+      position: absolute;
+      bottom: -2px; right: 0;
+      font-size: 10px;
+      color: #fff;
+      text-shadow: 1px 1px 0 #000;
+      font-weight: bold;
+    }
 
   </style>
 </head>
@@ -422,6 +504,7 @@
   <div id="title-screen" class="menu-overlay hidden">
     <h1>Classic Builder</h1>
     <button id="btn-play" class="menu-btn">Play</button>
+    <button id="btn-new-world" class="menu-btn">New World</button>
     <div class="controls-ref">
       WASD - Move &nbsp;|&nbsp; Space - Jump &nbsp;|&nbsp; Shift - Sprint<br>
       Left Click - Break &nbsp;|&nbsp; Right Click - Place<br>

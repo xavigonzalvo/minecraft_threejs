@@ -334,6 +334,33 @@ export class Player {
     }
   }
 
+  getState() {
+    return {
+      position: { x: this.position.x, y: this.position.y, z: this.position.z },
+      yaw: this.yaw,
+      pitch: this.pitch,
+      health: this.health,
+      flying: this.flying,
+    };
+  }
+
+  restoreState(state) {
+    if (state.position) {
+      this.position.set(state.position.x, state.position.y, state.position.z);
+      this.smoothCameraY = state.position.y;
+    }
+    if (state.yaw !== undefined) this.yaw = state.yaw;
+    if (state.pitch !== undefined) this.pitch = state.pitch;
+    if (state.health !== undefined) {
+      this.health = state.health;
+      this.dead = this.health <= 0;
+      document.dispatchEvent(new CustomEvent('health-change', { detail: { health: this.health, max: 20 } }));
+    }
+    if (state.flying !== undefined) this.flying = state.flying;
+    this.velocity.set(0, 0, 0);
+    this._fallStartY = null;
+  }
+
   getForwardDirection() {
     return new THREE.Vector3(
       -Math.sin(this.yaw) * Math.cos(this.pitch),
