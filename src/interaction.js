@@ -365,10 +365,19 @@ export class Interaction {
 
   placeBlockAtScreen(screenX, screenY) {
     if (this.placeCooldown > 0) return;
+    const ray = this.raycastFromScreen(screenX, screenY);
+    if (!ray.hit) return;
+
+    // Tap on crafting table → open crafting UI (like right-click on desktop)
+    if (ray.blockType === BlockType.CRAFTING_TABLE) {
+      this.placeCooldown = 0.25;
+      document.dispatchEvent(new Event('open-crafting'));
+      return;
+    }
+
     const placeType = this.inventory.getHotbarBlock(this.selectedSlot);
     if (placeType === BlockType.AIR || isItemType(placeType) || !this.inventory.canPlace(placeType)) return;
-    const ray = this.raycastFromScreen(screenX, screenY);
-    if (!ray.hit || ray.prevX === -999) return;
+    if (ray.prevX === -999) return;
     const px = Math.floor(this.player.position.x);
     const py1 = Math.floor(this.player.position.y - 1.62);
     const py2 = Math.floor(this.player.position.y);
