@@ -130,10 +130,11 @@ export class Inventory {
   /** Convert creative infinites to 64 stacks when switching to survival */
   materializeCreativeBlocks() {
     let changed = false;
-    // Give 64 of each hotbar block that has no count
+    // Give 64 of each hotbar block that has no count — set count directly
+    // without adding to personal slots (the block already lives in the hotbar)
     for (const bt of this.hotbarBlocks) {
       if (bt !== BlockType.AIR && (this.blockCounts.get(bt) || 0) <= 0) {
-        this.addBlock(bt, 64);
+        this.blockCounts.set(bt, 64);
         changed = true;
       }
     }
@@ -147,7 +148,7 @@ export class Inventory {
     }
     if (changed) {
       this._savePersonal();
-      this._syncCountsFromPersonal();
+      this._saveCounts();
       document.dispatchEvent(new Event('hotbar-changed'));
     }
   }
@@ -314,6 +315,17 @@ export class Inventory {
     this._pickUp(bt, count, { area: 'hotbar', index });
     this.cursorEl.style.left = e.clientX - 18 + 'px';
     this.cursorEl.style.top = e.clientY - 18 + 'px';
+    document.dispatchEvent(new Event('hotbar-changed'));
+  }
+
+  _onTrashClick() {
+    if (!this.heldItem) return;
+    // In creative mode, simply discard the held item
+    // In survival mode, also discard (item was already removed from source on pickup)
+    this.heldItem = null;
+    this.cursorEl.style.display = 'none';
+    this._syncCountsFromPersonal();
+    this._refreshUI();
     document.dispatchEvent(new Event('hotbar-changed'));
   }
 
@@ -503,6 +515,17 @@ export class Inventory {
     this.hintEl.className = 'inv-hint';
     personal.appendChild(this.hintEl);
 
+    // Trash bin (creative mode only)
+    this.trashEl = document.createElement('div');
+    this.trashEl.className = 'inv-trash';
+    this.trashEl.innerHTML = '🗑';
+    const trashLabel = document.createElement('span');
+    trashLabel.className = 'inv-trash-label';
+    trashLabel.textContent = 'Destroy Item';
+    this.trashEl.appendChild(trashLabel);
+    this.trashEl.addEventListener('click', () => this._onTrashClick());
+    personal.appendChild(this.trashEl);
+
     rightPanel.appendChild(personal);
     container.appendChild(rightPanel);
 
@@ -579,10 +602,14 @@ export class Inventory {
       this.hotbarGrid.appendChild(cell);
     }
 
+    // Trash bin visibility
+    this.trashEl.style.display = isCreative ? 'flex' : 'none';
+
     // Hint
     if (this.heldItem) {
       const name = BlockData[this.heldItem.type].name;
-      this.hintEl.textContent = `Holding ${name} — click a slot to place`;
+      const trashHint = isCreative ? ' or trash bin to destroy' : '';
+      this.hintEl.textContent = `Holding ${name} — click a slot to place${trashHint}`;
     } else {
       this.hintEl.textContent = 'Click a block to pick it up';
     }

@@ -467,6 +467,43 @@
       text-align: center;
       margin-top: 4px;
     }
+    .inv-trash {
+      width: 48px; height: 48px;
+      background: #555;
+      border: 2px solid;
+      border-color: #888 #333 #333 #888;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      align-self: flex-end;
+      margin-top: 4px;
+      font-size: 22px;
+      color: #aaa;
+      position: relative;
+    }
+    .inv-trash:hover {
+      border-color: #f66;
+      background: #6b3b3b;
+      color: #f88;
+    }
+    .inv-trash-label {
+      display: none;
+      position: absolute;
+      top: -28px;
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      font-size: 11px;
+      background: rgba(40,0,0,0.92);
+      padding: 2px 8px;
+      border: 1px solid #8a3a3a;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .inv-trash:hover .inv-trash-label {
+      display: block;
+    }
     /* Cursor: floating block following mouse when held */
     .inv-cursor {
       position: fixed;
