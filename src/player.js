@@ -63,7 +63,7 @@ export class Player {
       if (e.code === 'ShiftLeft') this.sprinting = true;
 
       // Double-tap space to toggle flying (creative only)
-      if (e.code === 'Space' && GameMode.isCreative() && this.active) {
+      if (e.code === 'Space' && !e.repeat && GameMode.isCreative() && this.active) {
         const now = performance.now();
         if (now - this._lastSpaceTap < DOUBLE_TAP_MS) {
           this.flying = !this.flying;
