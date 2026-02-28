@@ -15,6 +15,22 @@ function getMobTexture(name) {
   return tex;
 }
 
+// Create a solid-color texture from a canvas
+function _makeColorTexture(color) {
+  const size = 8;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export function reloadMobTextures() {
   for (const name of Object.keys(_mobTextureCache)) {
     const saved = localStorage.getItem('tex:' + name);
@@ -229,14 +245,21 @@ export class Zombie extends Mob {
   }
 
   _buildModel() {
-    const headMat = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_head') });
+    const headFaceMat = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_head') });
+    const headSideTex = _makeColorTexture('#567a35');
+    const headTopTex  = _makeColorTexture('#4a6b2e');
+    const headSideMat = new THREE.MeshLambertMaterial({ map: headSideTex });
+    const headTopMat  = new THREE.MeshLambertMaterial({ map: headTopTex });
+    // BoxGeometry face order: +X right, -X left, +Y top, -Y bottom, +Z front, -Z back
+    const headMats = [headSideMat, headSideMat, headTopMat, headTopMat, headFaceMat, headSideMat];
+
     const bodyMat = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_body') });
     const armMat  = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_arm') });
     const legMat  = new THREE.MeshLambertMaterial({ map: getMobTexture('zombie_leg') });
 
     // Head (0.5 x 0.5 x 0.5) — sits on top of body at y=1.5
     const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    this.head = new THREE.Mesh(headGeo, headMat);
+    this.head = new THREE.Mesh(headGeo, headMats);
     this.head.position.set(0, 1.75, 0);
 
     // Body (0.5 x 0.75 x 0.25) — from y=0.75 to y=1.5
@@ -269,7 +292,7 @@ export class Zombie extends Mob {
     this.group.add(this.head, this.body, this.leftArm, this.rightArm, this.leftLeg, this.rightLeg);
 
     // Store materials for flash effect
-    this._materials = [headMat, bodyMat, armMat, legMat];
+    this._materials = [headFaceMat, headSideMat, headTopMat, bodyMat, armMat, legMat];
     this._originalColors = this._materials.map(m => m.color.clone());
   }
 
