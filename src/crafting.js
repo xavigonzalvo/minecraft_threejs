@@ -115,3 +115,26 @@ export function findMatchingRecipe(grid) {
   }
   return null;
 }
+
+/** Total ingredient counts a recipe consumes per craft, as a Map<type, count>. */
+export function recipeIngredients(recipe) {
+  const m = new Map();
+  for (const t of recipe.pattern) {
+    if (!t) continue;
+    m.set(t, (m.get(t) || 0) + 1);
+  }
+  return m;
+}
+
+/** True if `inventoryCounts` (Map<type,count>) covers the recipe's ingredients. */
+export function canCraftRecipe(recipe, inventoryCounts) {
+  for (const [type, need] of recipeIngredients(recipe)) {
+    if ((inventoryCounts.get(type) || 0) < need) return false;
+  }
+  return true;
+}
+
+/** Recipes that fit within a grid of (maxWidth × maxHeight). */
+export function getRecipesForGrid(maxWidth, maxHeight) {
+  return CraftingRecipes.filter(r => r.width <= maxWidth && r.height <= maxHeight);
+}

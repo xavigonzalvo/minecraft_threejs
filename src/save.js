@@ -149,4 +149,5 @@ export async function deleteWorld() {
   localStorage.removeItem('hotbar_v2');
   localStorage.removeItem('blockCounts');
   localStorage.removeItem('personalInventory');
+  localStorage.removeItem('inventory_v3');
 }

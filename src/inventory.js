@@ -1,6 +1,9 @@
 import { BlockType, BlockData } from './blocks.js';
 import { GameMode } from './gamemode.js';
-import { isItemType, getItemOrBlockData, ItemType, ItemData, findMatchingRecipe } from './crafting.js';
+import {
+  isItemType, getItemOrBlockData, ItemType, ItemData,
+  findMatchingRecipe, recipeIngredients, canCraftRecipe, getRecipesForGrid,
+} from './crafting.js';
 
 const PLACEABLE_BLOCKS = [
   BlockType.GRASS, BlockType.DIRT, BlockType.STONE, BlockType.SAND,
@@ -16,11 +19,16 @@ const CATALOG_ITEMS = [
   ItemType.WOODEN_AXE,
 ];
 
-const STORAGE_KEY = 'hotbar_v2';
-const COUNTS_KEY = 'blockCounts';
-const PERSONAL_KEY = 'personalInventory';
-const MAIN_SLOTS = 27; // 3 rows x 9 cols
+const STORAGE_KEY = 'inventory_v3';
+// Legacy keys (read for migration, then removed)
+const LEGACY_HOTBAR_KEY = 'hotbar_v2';
+const LEGACY_COUNTS_KEY = 'blockCounts';
+const LEGACY_PERSONAL_KEY = 'personalInventory';
+
 const HOTBAR_SLOTS = 9;
+const MAIN_SLOTS = 27;
+const TOTAL_SLOTS = HOTBAR_SLOTS + MAIN_SLOTS; // 36
+const STACK_SIZE = 64;
 
 // Item texture file mapping
 const ITEM_TEXTURES = {
@@ -28,18 +36,22 @@ const ITEM_TEXTURES = {
   [ItemType.WOODEN_AXE]: 'wooden_axe',
 };
 
+function isValidSlotType(v) {
+  return v === BlockType.AIR || PLACEABLE_BLOCKS.includes(v) || isItemType(v);
+}
+
 export class Inventory {
   constructor(atlas) {
     this.atlas = atlas;
     this.selectedSlot = 0;
-    this.hotbarBlocks = this._loadHotbar();
-    this.blockCounts = this._loadCounts();
-    this.personalSlots = this._loadPersonal();
+    // Unified inventory: slots[0..8] = hotbar, slots[9..35] = main inventory
+    // Each slot is null or { type, count }
+    this.slots = this._loadSlots();
 
     // Held item state: what the player is currently carrying on cursor
     // { type, count, source } or null
-    // source: 'catalog' | { area: 'personal', index } | { area: 'hotbar', index }
-    //       | { area: 'crafting', index } | 'craftOutput'
+    // source: 'catalog' | { area: 'slot', index } | { area: 'crafting', index }
+    //       | { area: 'invCrafting', index } | 'craftOutput'
     this.heldItem = null;
 
     // Item texture cache: itemType -> Image
@@ -72,132 +84,183 @@ export class Inventory {
 
   // ── Persistence ──
 
-  _loadHotbar() {
+  _loadSlots() {
+    // Try the new unified format first
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const arr = JSON.parse(raw);
-        if (Array.isArray(arr) && arr.length === 9 &&
-            arr.every(v => v === BlockType.AIR || PLACEABLE_BLOCKS.includes(v) || isItemType(v))) {
-          return arr;
+        if (Array.isArray(arr) && arr.length === TOTAL_SLOTS) {
+          return arr.map(s => {
+            if (!s || typeof s !== 'object') return null;
+            if (!isValidSlotType(s.type) || s.type === BlockType.AIR) return null;
+            const count = Number(s.count);
+            if (!Number.isFinite(count) || count <= 0) return null;
+            return { type: s.type, count: Math.min(count, STACK_SIZE) };
+          });
         }
       }
     } catch { /* fall through */ }
-    return new Array(9).fill(BlockType.AIR);
-  }
 
-  _saveHotbar() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.hotbarBlocks));
-  }
-
-  _loadCounts() {
+    // Migrate from legacy storage (hotbar_v2 + personalInventory)
+    const slots = new Array(TOTAL_SLOTS).fill(null);
+    let migrated = false;
     try {
-      const raw = localStorage.getItem(COUNTS_KEY);
-      if (raw) {
-        const obj = JSON.parse(raw);
-        const map = new Map();
-        for (const [k, v] of Object.entries(obj)) map.set(Number(k), v);
-        return map;
+      const personalRaw = localStorage.getItem(LEGACY_PERSONAL_KEY);
+      if (personalRaw) {
+        const arr = JSON.parse(personalRaw);
+        if (Array.isArray(arr)) {
+          for (let i = 0; i < Math.min(arr.length, MAIN_SLOTS); i++) {
+            const s = arr[i];
+            if (s && isValidSlotType(s.type) && s.type !== BlockType.AIR) {
+              const count = Number(s.count);
+              if (Number.isFinite(count) && count > 0) {
+                slots[HOTBAR_SLOTS + i] = { type: s.type, count: Math.min(count, STACK_SIZE) };
+                migrated = true;
+              }
+            }
+          }
+        }
+      }
+      const hotbarRaw = localStorage.getItem(LEGACY_HOTBAR_KEY);
+      if (hotbarRaw) {
+        const arr = JSON.parse(hotbarRaw);
+        if (Array.isArray(arr)) {
+          // Move stacks of the referenced types from main into hotbar slots
+          for (let i = 0; i < Math.min(arr.length, HOTBAR_SLOTS); i++) {
+            const t = arr[i];
+            if (t === BlockType.AIR || !isValidSlotType(t)) continue;
+            // Find a stack in main of this type and move it to hotbar slot i
+            for (let j = HOTBAR_SLOTS; j < TOTAL_SLOTS; j++) {
+              if (slots[j] && slots[j].type === t) {
+                slots[i] = slots[j];
+                slots[j] = null;
+                migrated = true;
+                break;
+              }
+            }
+          }
+        }
       }
     } catch { /* fall through */ }
-    return new Map();
+
+    if (migrated) {
+      // Persist migration result and clean up legacy keys
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(slots));
+      localStorage.removeItem(LEGACY_HOTBAR_KEY);
+      localStorage.removeItem(LEGACY_COUNTS_KEY);
+      localStorage.removeItem(LEGACY_PERSONAL_KEY);
+    }
+    return slots;
   }
 
-  _saveCounts() {
-    const obj = {};
-    for (const [k, v] of this.blockCounts) obj[k] = v;
-    localStorage.setItem(COUNTS_KEY, JSON.stringify(obj));
-  }
-
-  _loadPersonal() {
-    try {
-      const raw = localStorage.getItem(PERSONAL_KEY);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr) && arr.length === MAIN_SLOTS) return arr;
-      }
-    } catch { /* fall through */ }
-    return new Array(MAIN_SLOTS).fill(null);
-  }
-
-  _savePersonal() {
-    localStorage.setItem(PERSONAL_KEY, JSON.stringify(this.personalSlots));
+  _saveSlots() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.slots));
   }
 
   // ── Public API (used by game systems) ──
 
-  addBlock(blockType, count = 1) {
-    const cur = this.blockCounts.get(blockType) || 0;
-    this.blockCounts.set(blockType, cur + count);
-    this._saveCounts();
-    this._addToPersonal(blockType, count);
-
-    if (!this.hotbarBlocks.includes(blockType)) {
-      const emptySlot = this.hotbarBlocks.indexOf(BlockType.AIR);
-      if (emptySlot !== -1) {
-        this.hotbarBlocks[emptySlot] = blockType;
-        this._saveHotbar();
-      }
-    }
-    document.dispatchEvent(new Event('hotbar-changed'));
+  get hotbarBlocks() {
+    // Backwards-compatible getter: array of types (AIR for empty)
+    return this.slots.slice(0, HOTBAR_SLOTS).map(s => s ? s.type : BlockType.AIR);
   }
 
-  removeBlock(blockType) {
-    const cur = this.blockCounts.get(blockType) || 0;
-    if (cur <= 0) return false;
-    this.blockCounts.set(blockType, cur - 1);
-    this._removeFromPersonal(blockType, 1);
-    if (cur - 1 === 0) {
-      this.blockCounts.delete(blockType);
-      for (let i = 0; i < this.hotbarBlocks.length; i++) {
-        if (this.hotbarBlocks[i] === blockType) {
-          this.hotbarBlocks[i] = BlockType.AIR;
-        }
+  /**
+   * Add `count` of `type` to the inventory. Stacks into existing matching
+   * stacks (up to STACK_SIZE) first; otherwise places into the first empty
+   * slot, preferring the hotbar so newly-acquired types are quick-access.
+   * Returns the number of items that did not fit.
+   */
+  addBlock(type, count = 1) {
+    if (type === BlockType.AIR || count <= 0) return count;
+    let remaining = count;
+
+    // 1. Top up existing stacks of this type
+    for (let i = 0; i < TOTAL_SLOTS && remaining > 0; i++) {
+      const s = this.slots[i];
+      if (s && s.type === type && s.count < STACK_SIZE) {
+        const room = STACK_SIZE - s.count;
+        const add = Math.min(room, remaining);
+        s.count += add;
+        remaining -= add;
       }
-      this._saveHotbar();
     }
-    this._saveCounts();
+    // 2. Place into empty slots (hotbar first, then main)
+    for (let i = 0; i < TOTAL_SLOTS && remaining > 0; i++) {
+      if (!this.slots[i]) {
+        const add = Math.min(STACK_SIZE, remaining);
+        this.slots[i] = { type, count: add };
+        remaining -= add;
+      }
+    }
+
+    this._saveSlots();
     document.dispatchEvent(new Event('hotbar-changed'));
-    return true;
+    return remaining;
   }
 
-  canPlace(blockType) {
+  /**
+   * Remove one of `type` from the inventory. Prefers the currently-selected
+   * hotbar slot, then any hotbar slot of that type, then main inventory.
+   * Returns true if removed.
+   */
+  removeBlock(type) {
+    // Prefer the selected hotbar slot if it matches
+    const sel = this.slots[this.selectedSlot];
+    if (sel && sel.type === type) {
+      sel.count -= 1;
+      if (sel.count <= 0) this.slots[this.selectedSlot] = null;
+      this._saveSlots();
+      document.dispatchEvent(new Event('hotbar-changed'));
+      return true;
+    }
+    // Otherwise scan hotbar then main
+    for (let i = 0; i < TOTAL_SLOTS; i++) {
+      const s = this.slots[i];
+      if (s && s.type === type) {
+        s.count -= 1;
+        if (s.count <= 0) this.slots[i] = null;
+        this._saveSlots();
+        document.dispatchEvent(new Event('hotbar-changed'));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  canPlace(type) {
     if (GameMode.isCreative()) return true;
-    return (this.blockCounts.get(blockType) || 0) > 0;
+    return this.getCount(type) > 0;
   }
 
-  /** Convert creative infinites to 64 stacks when switching to survival */
+  /** When switching from creative to survival, ensure all hotbar types have
+   *  a stack (default 64) so the player isn't suddenly unarmed. */
   materializeCreativeBlocks() {
     let changed = false;
-    // Give 64 of each hotbar block that has no count — set count directly
-    // without adding to personal slots (the block already lives in the hotbar)
-    for (const bt of this.hotbarBlocks) {
-      if (bt !== BlockType.AIR && (this.blockCounts.get(bt) || 0) <= 0) {
-        this.blockCounts.set(bt, 64);
-        changed = true;
-      }
-    }
-    // Convert any Infinity personal slots to 64
-    for (let i = 0; i < MAIN_SLOTS; i++) {
-      const slot = this.personalSlots[i];
-      if (slot && (slot.count === Infinity || slot.count <= 0)) {
-        slot.count = 64;
+    for (let i = 0; i < HOTBAR_SLOTS; i++) {
+      const s = this.slots[i];
+      if (s && (!Number.isFinite(s.count) || s.count <= 0)) {
+        s.count = STACK_SIZE;
         changed = true;
       }
     }
     if (changed) {
-      this._savePersonal();
-      this._saveCounts();
+      this._saveSlots();
       document.dispatchEvent(new Event('hotbar-changed'));
     }
   }
 
-  getCount(blockType) {
-    return this.blockCounts.get(blockType) || 0;
+  getCount(type) {
+    let n = 0;
+    for (const s of this.slots) {
+      if (s && s.type === type) n += s.count;
+    }
+    return n;
   }
 
   getHotbarBlock(slot) {
-    return this.hotbarBlocks[slot];
+    const s = this.slots[slot];
+    return s ? s.type : BlockType.AIR;
   }
 
   setSelectedSlot(slot) {
@@ -222,48 +285,16 @@ export class Inventory {
     for (let i = 0; i < 4; i++) {
       const slot = this.invCraftingGrid[i];
       if (slot) {
-        this._addToPersonal(slot.type, slot.count);
+        this.addBlock(slot.type, slot.count);
         this.invCraftingGrid[i] = null;
       }
     }
-    // If holding an item, put it back
+    // If holding an item, put it back at its source
     this._cancelHeld();
-    this._syncCountsFromPersonal();
+    this._saveSlots();
     document.dispatchEvent(new Event('hotbar-changed'));
     this.overlay.style.display = 'none';
     document.removeEventListener('mousemove', this._onMouseMove);
-  }
-
-  // ── Personal slots helpers ──
-
-  _addToPersonal(blockType, count) {
-    for (let i = 0; i < MAIN_SLOTS; i++) {
-      if (this.personalSlots[i] && this.personalSlots[i].type === blockType) {
-        this.personalSlots[i].count += count;
-        this._savePersonal();
-        return;
-      }
-    }
-    for (let i = 0; i < MAIN_SLOTS; i++) {
-      if (!this.personalSlots[i]) {
-        this.personalSlots[i] = { type: blockType, count };
-        this._savePersonal();
-        return;
-      }
-    }
-  }
-
-  _removeFromPersonal(blockType, count = 1) {
-    for (let i = 0; i < MAIN_SLOTS; i++) {
-      if (this.personalSlots[i] && this.personalSlots[i].type === blockType) {
-        this.personalSlots[i].count -= count;
-        if (this.personalSlots[i].count <= 0) {
-          this.personalSlots[i] = null;
-        }
-        this._savePersonal();
-        return;
-      }
-    }
   }
 
   // ── Cursor / held item ──
@@ -276,7 +307,6 @@ export class Inventory {
 
   _pickUp(type, count, source) {
     this.heldItem = { type, count, source };
-    // Show cursor icon
     this.cursorEl.innerHTML = '';
     this.cursorEl.appendChild(this._makeIconCanvas(type));
     if (count !== Infinity) {
@@ -292,199 +322,275 @@ export class Inventory {
   _cancelHeld() {
     if (!this.heldItem) return;
     const h = this.heldItem;
-    // Return item to its source
+    // Return item to its source. Catalog and craftOutput are virtual sources
+    // (no real slot), so just discard.
     if (h.source !== 'catalog' && h.source !== 'craftOutput') {
-      if (h.source.area === 'personal') {
-        this.personalSlots[h.source.index] = { type: h.type, count: h.count };
-        this._savePersonal();
-      } else if (h.source.area === 'hotbar') {
-        this.hotbarBlocks[h.source.index] = h.type;
-        this._saveHotbar();
+      const stack = { type: h.type, count: h.count === Infinity ? STACK_SIZE : h.count };
+      if (h.source.area === 'slot') {
+        // Try to put back in the original slot; if occupied, add to inventory
+        if (!this.slots[h.source.index]) {
+          this.slots[h.source.index] = stack;
+        } else {
+          this.addBlock(stack.type, stack.count);
+        }
       } else if (h.source.area === 'crafting') {
-        this.craftingGrid[h.source.index] = { type: h.type, count: h.count };
+        if (!this.craftingGrid[h.source.index]) {
+          this.craftingGrid[h.source.index] = stack;
+        } else {
+          this.addBlock(stack.type, stack.count);
+        }
       } else if (h.source.area === 'invCrafting') {
-        this.invCraftingGrid[h.source.index] = { type: h.type, count: h.count };
+        if (!this.invCraftingGrid[h.source.index]) {
+          this.invCraftingGrid[h.source.index] = stack;
+        } else {
+          this.addBlock(stack.type, stack.count);
+        }
       }
     }
     this.heldItem = null;
     this.cursorEl.style.display = 'none';
+    this._saveSlots();
     document.dispatchEvent(new Event('hotbar-changed'));
   }
 
   // ── Click handlers ──
 
   _onCatalogClick(blockType, e) {
-    const isCreative = GameMode.isCreative();
+    // Catalog only exists in creative mode; ignore in survival.
+    if (!GameMode.isCreative()) return;
 
     if (this.heldItem) {
-      // Clicking catalog while holding: just drop held item back
-      this._cancelHeld();
+      // Clicking catalog while holding: discard held (catalog acts as trash)
+      this.heldItem = null;
+      this.cursorEl.style.display = 'none';
       this._refreshUI();
       return;
     }
 
-    // Pick up from catalog (infinite source in creative, or copy in survival if owned)
-    if (!isCreative && this.getCount(blockType) <= 0) return;
-
-    const count = isCreative ? Infinity : this.getCount(blockType);
-    this._pickUp(blockType, count, 'catalog');
-
-    // Position cursor at mouse
+    // Pick up an infinite stack from the catalog
+    this._pickUp(blockType, Infinity, 'catalog');
     this.cursorEl.style.left = e.clientX - 18 + 'px';
     this.cursorEl.style.top = e.clientY - 18 + 'px';
   }
 
-  _onPersonalClick(index, e) {
-    const slot = this.personalSlots[index];
-
+  _onSlotClick(index, e) {
     if (this.heldItem) {
-      // Place held item into this personal slot
-      this._placeIntoPersonal(index);
+      this._placeIntoSlot(index);
       return;
     }
-
-    // Pick up from personal slot
+    const slot = this.slots[index];
     if (!slot) return;
-    this.personalSlots[index] = null;
-    this._savePersonal();
-    this._pickUp(slot.type, slot.count, { area: 'personal', index });
-    this.cursorEl.style.left = e.clientX - 18 + 'px';
-    this.cursorEl.style.top = e.clientY - 18 + 'px';
-  }
-
-  _onHotbarClick(index, e) {
-    const bt = this.hotbarBlocks[index];
-
-    if (this.heldItem) {
-      // Place held item into hotbar slot
-      this._placeIntoHotbar(index);
-      return;
-    }
-
-    // Pick up from hotbar
-    if (bt === BlockType.AIR) return;
-    this.hotbarBlocks[index] = BlockType.AIR;
-    this._saveHotbar();
-    // In survival, find count from personal slots; in creative, infinite
-    const count = GameMode.isCreative() ? Infinity : 1;
-    this._pickUp(bt, count, { area: 'hotbar', index });
+    // Pick up entire stack
+    this.slots[index] = null;
+    this._saveSlots();
+    this._pickUp(slot.type, slot.count, { area: 'slot', index });
     this.cursorEl.style.left = e.clientX - 18 + 'px';
     this.cursorEl.style.top = e.clientY - 18 + 'px';
     document.dispatchEvent(new Event('hotbar-changed'));
+  }
+
+  _placeIntoSlot(index) {
+    const h = this.heldItem;
+    if (!h) return;
+
+    const existing = this.slots[index];
+    const isCatalog = h.source === 'catalog';
+    // For catalog (creative), Infinity becomes a STACK_SIZE drop
+    const heldCount = h.count === Infinity ? STACK_SIZE : h.count;
+
+    if (existing && existing.type === h.type) {
+      // Stack same-type
+      const room = STACK_SIZE - existing.count;
+      const moved = Math.min(room, heldCount);
+      existing.count += moved;
+      const leftover = heldCount - moved;
+      if (isCatalog) {
+        // Held was infinite — it stays in hand if catalog
+        if (h.count === Infinity) {
+          // Cursor unchanged
+          this._saveSlots();
+          this._refreshUI();
+          return;
+        }
+        // Non-infinite catalog drop (shouldn't happen but handle)
+        if (leftover > 0) {
+          this.heldItem = { ...h, count: leftover };
+          this._refreshCursor();
+        } else {
+          this._clearHeld();
+        }
+      } else {
+        if (leftover > 0) {
+          this.heldItem = { ...h, count: leftover };
+          this._refreshCursor();
+        } else {
+          this._clearHeld();
+        }
+      }
+    } else if (existing) {
+      // Different type — swap. Held becomes the previously-in-slot stack.
+      // (For a catalog/infinite cursor, this drops the infinite-ness, matching
+      // Minecraft creative: re-click the catalog to get an infinite cursor again.)
+      this.slots[index] = { type: h.type, count: heldCount };
+      this._pickUp(existing.type, existing.count, { area: 'slot', index });
+    } else {
+      // Empty target — place
+      this.slots[index] = { type: h.type, count: heldCount };
+      if (isCatalog && h.count === Infinity) {
+        // Keep held infinite — catalog is an infinite source
+        this._saveSlots();
+        this._refreshUI();
+        return;
+      }
+      this._clearHeld();
+    }
+
+    this._saveSlots();
+    document.dispatchEvent(new Event('hotbar-changed'));
+    this._refreshUI();
+  }
+
+  _refreshCursor() {
+    const h = this.heldItem;
+    this.cursorEl.innerHTML = '';
+    this.cursorEl.appendChild(this._makeIconCanvas(h.type));
+    if (h.count !== Infinity) {
+      const badge = document.createElement('span');
+      badge.className = 'inv-cell-count';
+      badge.textContent = String(h.count);
+      this.cursorEl.appendChild(badge);
+    }
+    this.cursorEl.style.display = 'block';
+  }
+
+  _clearHeld() {
+    this.heldItem = null;
+    this.cursorEl.style.display = 'none';
   }
 
   _onTrashClick() {
     if (!this.heldItem) return;
-    // In creative mode, simply discard the held item
-    // In survival mode, also discard (item was already removed from source on pickup)
-    this.heldItem = null;
-    this.cursorEl.style.display = 'none';
-    this._syncCountsFromPersonal();
-    this._refreshUI();
-    document.dispatchEvent(new Event('hotbar-changed'));
-  }
-
-  _placeIntoPersonal(index) {
-    const h = this.heldItem;
-    if (!h) return;
-
-    const existing = this.personalSlots[index];
-
-    if (h.source === 'catalog') {
-      // From catalog: place a copy, don't remove from catalog
-      if (existing && existing.type === h.type && h.count !== Infinity) {
-        // Stack same type
-        existing.count += h.count;
-      } else if (existing) {
-        // Swap: put existing back — but catalog source means just overwrite
-        this.personalSlots[index] = h.count === Infinity
-          ? { type: h.type, count: 64 }
-          : { type: h.type, count: h.count };
-      } else {
-        this.personalSlots[index] = h.count === Infinity
-          ? { type: h.type, count: 64 }
-          : { type: h.type, count: h.count };
-      }
-    } else {
-      // From personal or hotbar
-      if (existing && existing.type === h.type) {
-        // Stack same type
-        existing.count += (h.count === Infinity ? 64 : h.count);
-      } else if (existing) {
-        // Swap: put existing where held item came from
-        this.personalSlots[index] = { type: h.type, count: h.count === Infinity ? 64 : h.count };
-        if (h.source.area === 'personal') {
-          this.personalSlots[h.source.index] = existing;
-        } else if (h.source.area === 'hotbar') {
-          this.hotbarBlocks[h.source.index] = existing.type;
-          this._saveHotbar();
-        } else if (h.source.area === 'crafting') {
-          this.craftingGrid[h.source.index] = existing;
-        } else if (h.source.area === 'invCrafting') {
-          this.invCraftingGrid[h.source.index] = existing;
-        }
-      } else {
-        this.personalSlots[index] = { type: h.type, count: h.count === Infinity ? 64 : h.count };
-      }
-    }
-
-    this._savePersonal();
-    this._syncCountsFromPersonal();
     this.heldItem = null;
     this.cursorEl.style.display = 'none';
     this._refreshUI();
     document.dispatchEvent(new Event('hotbar-changed'));
   }
 
-  _placeIntoHotbar(index) {
-    const h = this.heldItem;
-    if (!h) return;
+  // ── Recipe book rendering ──
 
-    const existingBt = this.hotbarBlocks[index];
+  _renderRecipeBook(listEl, gridArr, gridWidth, gridHeight, onAfterFill) {
+    // Count inventory + whatever is currently in this grid (those items will
+    // be returned to inventory before auto-fill runs).
+    const counts = this._inventoryCounts();
+    for (const slot of gridArr) {
+      if (slot) counts.set(slot.type, (counts.get(slot.type) || 0) + slot.count);
+    }
+    const recipes = getRecipesForGrid(gridWidth, gridHeight);
+    listEl.innerHTML = '';
+    for (const recipe of recipes) {
+      const item = document.createElement('div');
+      item.className = 'recipe-item';
+      const canCraft = canCraftRecipe(recipe, counts);
+      if (!canCraft) item.classList.add('recipe-item-disabled');
+      item.appendChild(this._makeIconCanvas(recipe.result.type));
 
-    // Place held block type into hotbar
-    this.hotbarBlocks[index] = h.type;
+      const countBadge = document.createElement('span');
+      countBadge.className = 'inv-cell-count';
+      countBadge.textContent = String(recipe.result.count);
+      item.appendChild(countBadge);
 
-    // If there was a block in the hotbar, swap it back to source
-    if (existingBt !== BlockType.AIR && h.source !== 'catalog') {
-      if (h.source.area === 'personal') {
-        this.personalSlots[h.source.index] = this.personalSlots[h.source.index] || null;
-        // Put the old hotbar block back where the held item came from
-        const existingPersonal = this.personalSlots[h.source.index];
-        if (!existingPersonal) {
-          // Find the count for the existing hotbar block from personal slots
-          this.personalSlots[h.source.index] = null; // will be empty, hotbar is just a reference
-        }
-      } else if (h.source.area === 'hotbar') {
-        this.hotbarBlocks[h.source.index] = existingBt;
+      // Tooltip: result name + ingredients
+      const tip = document.createElement('span');
+      tip.className = 'recipe-tooltip';
+      const resultData = getItemOrBlockData(recipe.result.type);
+      const resultName = resultData ? resultData.name : '?';
+      const ingredients = [];
+      for (const [type, n] of recipeIngredients(recipe)) {
+        const data = getItemOrBlockData(type);
+        ingredients.push(`${n}× ${data ? data.name : '?'}`);
       }
-    }
+      tip.textContent = `${recipe.result.count}× ${resultName}\n${ingredients.join(', ')}`;
+      item.appendChild(tip);
 
-    // If source was personal/hotbar, the item we picked up is now in the hotbar
-    // If from catalog with creative, it just assigns
-    if (h.source !== 'catalog' && h.source.area === 'personal') {
-      // Already removed from personal on pickup, that's fine — hotbar is separate from personal
+      if (canCraft) {
+        item.addEventListener('click', () => {
+          const ok = this._fillRecipeIntoGrid(recipe, gridArr, gridWidth);
+          if (ok && onAfterFill) onAfterFill();
+        });
+      }
+      listEl.appendChild(item);
     }
-
-    this._saveHotbar();
-    this._savePersonal();
-    this.heldItem = null;
-    this.cursorEl.style.display = 'none';
-    this._refreshUI();
-    document.dispatchEvent(new Event('hotbar-changed'));
   }
 
-  _syncCountsFromPersonal() {
-    if (GameMode.isCreative()) return;
-    // Rebuild blockCounts from personal slots
-    this.blockCounts.clear();
-    for (const slot of this.personalSlots) {
+  // ── Recipe book helpers ──
+
+  /** Snapshot of current inventory totals as Map<type, count>. */
+  _inventoryCounts() {
+    const m = new Map();
+    for (const s of this.slots) {
+      if (!s) continue;
+      m.set(s.type, (m.get(s.type) || 0) + s.count);
+    }
+    return m;
+  }
+
+  /** Find first slot containing the given type with count >= 1. -1 if none. */
+  _findSlotWithItem(type) {
+    for (let i = 0; i < this.slots.length; i++) {
+      const s = this.slots[i];
+      if (s && s.type === type && s.count > 0) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * Auto-fill the given crafting grid from the player's inventory based on
+   * the recipe pattern. `gridArr` must be `this.craftingGrid` (3x3) or
+   * `this.invCraftingGrid` (2x2). `gridWidth` is 3 or 2 respectively.
+   * No-op if the player can't afford the recipe.
+   */
+  _fillRecipeIntoGrid(recipe, gridArr, gridWidth) {
+    // In creative, we don't actually consume ingredients normally — but the
+    // crafting grid still needs items. Use the same path as survival.
+    if (!canCraftRecipe(recipe, this._inventoryCounts())) return false;
+
+    // Cancel any held item back to source first
+    this._cancelHeld();
+
+    // Return whatever is currently in the grid back to inventory
+    for (let i = 0; i < gridArr.length; i++) {
+      const slot = gridArr[i];
       if (slot) {
-        const cur = this.blockCounts.get(slot.type) || 0;
-        this.blockCounts.set(slot.type, cur + slot.count);
+        this.addBlock(slot.type, slot.count);
+        gridArr[i] = null;
       }
     }
-    this._saveCounts();
+
+    // Place pattern cells: top-left aligned in the grid
+    for (let ry = 0; ry < recipe.height; ry++) {
+      for (let rx = 0; rx < recipe.width; rx++) {
+        const t = recipe.pattern[ry * recipe.width + rx];
+        if (!t) continue;
+        const slotIdx = this._findSlotWithItem(t);
+        if (slotIdx < 0) {
+          // Shouldn't happen — canCraftRecipe verified it, but be safe:
+          // restore items already pulled into the grid back to inventory
+          for (let j = 0; j < gridArr.length; j++) {
+            if (gridArr[j]) {
+              this.addBlock(gridArr[j].type, gridArr[j].count);
+              gridArr[j] = null;
+            }
+          }
+          return false;
+        }
+        // Pull 1 of this type out of the inventory slot
+        this.slots[slotIdx].count -= 1;
+        if (this.slots[slotIdx].count <= 0) this.slots[slotIdx] = null;
+        gridArr[ry * gridWidth + rx] = { type: t, count: 1 };
+      }
+    }
+    this._saveSlots();
+    return true;
   }
 
   // ── Rendering ──
@@ -511,7 +617,6 @@ export class Inventory {
     return canvas;
   }
 
-  // Keep backward compat alias
   _makeBlockCanvas(blockType) {
     return this._makeIconCanvas(blockType);
   }
@@ -550,17 +655,17 @@ export class Inventory {
     const container = document.createElement('div');
     container.className = 'inventory-container';
 
-    // Left panel: All blocks catalog
-    const leftPanel = document.createElement('div');
-    leftPanel.className = 'inv-panel';
+    // Left panel: All blocks catalog (creative only)
+    this.leftPanel = document.createElement('div');
+    this.leftPanel.className = 'inv-panel';
     const leftTitle = document.createElement('div');
     leftTitle.className = 'inv-panel-title';
     leftTitle.textContent = 'All Items';
-    leftPanel.appendChild(leftTitle);
+    this.leftPanel.appendChild(leftTitle);
     this.catalogGrid = document.createElement('div');
     this.catalogGrid.className = 'inv-catalog';
-    leftPanel.appendChild(this.catalogGrid);
-    container.appendChild(leftPanel);
+    this.leftPanel.appendChild(this.catalogGrid);
+    container.appendChild(this.leftPanel);
 
     // Right panel: Personal inventory
     const rightPanel = document.createElement('div');
@@ -605,13 +710,25 @@ export class Inventory {
     const invCraftArea = document.createElement('div');
     invCraftArea.className = 'inv-craft-area';
 
+    // Recipe book (only 2x2-fitting recipes)
+    const invRecipeBook = document.createElement('div');
+    invRecipeBook.className = 'recipe-book inv-recipe-book';
+    const invRbTitle = document.createElement('div');
+    invRbTitle.className = 'recipe-book-title';
+    invRbTitle.textContent = 'Recipes';
+    invRecipeBook.appendChild(invRbTitle);
+    this.invRecipeBookList = document.createElement('div');
+    this.invRecipeBookList.className = 'recipe-book-list';
+    invRecipeBook.appendChild(this.invRecipeBookList);
+    invCraftArea.appendChild(invRecipeBook);
+
     this.invCraftGrid = document.createElement('div');
     this.invCraftGrid.className = 'inv-craft-grid';
     invCraftArea.appendChild(this.invCraftGrid);
 
     const invCraftArrow = document.createElement('div');
     invCraftArrow.className = 'inv-craft-arrow';
-    invCraftArrow.textContent = '\u2192';
+    invCraftArrow.textContent = '→';
     invCraftArea.appendChild(invCraftArrow);
 
     this.invCraftOutput = document.createElement('div');
@@ -627,7 +744,7 @@ export class Inventory {
     // Close button
     const closeBtn = document.createElement('div');
     closeBtn.className = 'inventory-close-btn';
-    closeBtn.textContent = '\u00d7';
+    closeBtn.textContent = '×';
     closeBtn.addEventListener('click', () => {
       document.dispatchEvent(new CustomEvent('inventory-close'));
     });
@@ -655,28 +772,35 @@ export class Inventory {
     const container = document.createElement('div');
     container.className = 'crafting-container';
 
-    // Title
     const title = document.createElement('div');
     title.className = 'inv-panel-title';
     title.textContent = 'Crafting Table';
     container.appendChild(title);
 
-    // Crafting area: grid + arrow + output
     const craftArea = document.createElement('div');
     craftArea.className = 'craft-area';
 
-    // 3x3 grid
+    // Recipe book (left of the 3x3 grid)
+    const recipeBook = document.createElement('div');
+    recipeBook.className = 'recipe-book';
+    const rbTitle = document.createElement('div');
+    rbTitle.className = 'recipe-book-title';
+    rbTitle.textContent = 'Recipes';
+    recipeBook.appendChild(rbTitle);
+    this.recipeBookList = document.createElement('div');
+    this.recipeBookList.className = 'recipe-book-list';
+    recipeBook.appendChild(this.recipeBookList);
+    craftArea.appendChild(recipeBook);
+
     this.craftGrid = document.createElement('div');
     this.craftGrid.className = 'craft-grid';
     craftArea.appendChild(this.craftGrid);
 
-    // Arrow
     const arrow = document.createElement('div');
     arrow.className = 'craft-arrow';
-    arrow.textContent = '\u2192';
+    arrow.textContent = '→';
     craftArea.appendChild(arrow);
 
-    // Output slot
     this.craftOutput = document.createElement('div');
     this.craftOutput.className = 'inv-cell craft-output';
     this.craftOutput.addEventListener('click', (e) => this._onCraftingOutputClick(e));
@@ -684,7 +808,6 @@ export class Inventory {
 
     container.appendChild(craftArea);
 
-    // Player inventory section in crafting view
     const invSection = document.createElement('div');
     invSection.className = 'craft-inventory-section';
 
@@ -707,10 +830,9 @@ export class Inventory {
 
     container.appendChild(invSection);
 
-    // Close button
     const closeBtn = document.createElement('div');
     closeBtn.className = 'inventory-close-btn';
-    closeBtn.textContent = '\u00d7';
+    closeBtn.textContent = '×';
     closeBtn.addEventListener('click', () => {
       document.dispatchEvent(new Event('crafting-close'));
     });
@@ -718,7 +840,6 @@ export class Inventory {
 
     overlay.appendChild(container);
 
-    // Cursor element for crafting
     this.craftCursorEl = document.createElement('div');
     this.craftCursorEl.className = 'inv-cursor';
     this.craftCursorEl.style.display = 'none';
@@ -744,12 +865,11 @@ export class Inventory {
     for (let i = 0; i < 9; i++) {
       const slot = this.craftingGrid[i];
       if (slot) {
-        this._addToPersonal(slot.type, slot.count);
+        this.addBlock(slot.type, slot.count);
         this.craftingGrid[i] = null;
       }
     }
     this._cancelHeld();
-    this._syncCountsFromPersonal();
     document.dispatchEvent(new Event('hotbar-changed'));
     this.craftingOverlay.style.display = 'none';
     document.removeEventListener('mousemove', this._onMouseMove);
@@ -757,29 +877,35 @@ export class Inventory {
 
   _onCraftGridClick(index, e) {
     if (this.heldItem) {
-      // Place held item into crafting grid
       const existing = this.craftingGrid[index];
-      if (existing && existing.type === this.heldItem.type) {
-        existing.count += (this.heldItem.count === Infinity ? 1 : this.heldItem.count);
-        if (this.heldItem.source !== 'catalog' && this.heldItem.source !== 'craftOutput') {
-          // item consumed
+      const h = this.heldItem;
+      const heldCount = h.count === Infinity ? 1 : h.count;
+      if (existing && existing.type === h.type) {
+        existing.count += heldCount;
+        if (h.count === Infinity) {
+          // Keep cursor (catalog)
+        } else {
+          this._clearHeld();
         }
       } else if (existing) {
         // Swap
-        const newSlot = { type: this.heldItem.type, count: this.heldItem.count === Infinity ? 1 : this.heldItem.count };
-        this.craftingGrid[index] = newSlot;
-        this._pickUp(existing.type, existing.count, { area: 'crafting', index });
-        this._updateCraftingResult();
-        this._refreshCraftingUI();
-        return;
+        this.craftingGrid[index] = { type: h.type, count: heldCount };
+        if (h.count === Infinity) {
+          // Catalog source can't really be "swapped into" — the existing
+          // crafting slot becomes the new held stack.
+          this._pickUp(existing.type, existing.count, { area: 'crafting', index });
+        } else {
+          this._pickUp(existing.type, existing.count, { area: 'crafting', index });
+        }
       } else {
-        this.craftingGrid[index] = { type: this.heldItem.type, count: this.heldItem.count === Infinity ? 1 : this.heldItem.count };
+        this.craftingGrid[index] = { type: h.type, count: heldCount };
+        if (h.count === Infinity) {
+          // Keep cursor (catalog)
+        } else {
+          this._clearHeld();
+        }
       }
-      this.heldItem = null;
-      this.cursorEl.style.display = 'none';
-      this.craftCursorEl.style.display = 'none';
     } else {
-      // Pick up from crafting grid
       const slot = this.craftingGrid[index];
       if (!slot) return;
       this.craftingGrid[index] = null;
@@ -793,7 +919,7 @@ export class Inventory {
 
   _onCraftingOutputClick(e) {
     if (!this.craftingResult) return;
-    if (this.heldItem) return; // Must have empty hand
+    if (this.heldItem) return;
 
     const result = this.craftingResult;
 
@@ -802,13 +928,10 @@ export class Inventory {
       const slot = this.craftingGrid[i];
       if (slot) {
         slot.count -= 1;
-        if (slot.count <= 0) {
-          this.craftingGrid[i] = null;
-        }
+        if (slot.count <= 0) this.craftingGrid[i] = null;
       }
     }
 
-    // Add result to inventory
     this.addBlock(result.type, result.count);
 
     this._updateCraftingResult();
@@ -816,42 +939,13 @@ export class Inventory {
     document.dispatchEvent(new Event('hotbar-changed'));
   }
 
-  _onCraftPersonalClick(index, e) {
-    const slot = this.personalSlots[index];
-    if (this.heldItem) {
-      this._placeIntoPersonal(index);
-      this._refreshCraftingUI();
-      return;
-    }
-    if (!slot) return;
-    this.personalSlots[index] = null;
-    this._savePersonal();
-    this._pickUp(slot.type, slot.count, { area: 'personal', index });
-    this.cursorEl.style.left = e.clientX - 18 + 'px';
-    this.cursorEl.style.top = e.clientY - 18 + 'px';
-    this._refreshCraftingUI();
-  }
-
-  _onCraftHotbarClick(index, e) {
-    const bt = this.hotbarBlocks[index];
-    if (this.heldItem) {
-      this._placeIntoHotbar(index);
-      this._refreshCraftingUI();
-      return;
-    }
-    if (bt === BlockType.AIR) return;
-    this.hotbarBlocks[index] = BlockType.AIR;
-    this._saveHotbar();
-    const count = GameMode.isCreative() ? Infinity : 1;
-    this._pickUp(bt, count, { area: 'hotbar', index });
-    this.cursorEl.style.left = e.clientX - 18 + 'px';
-    this.cursorEl.style.top = e.clientY - 18 + 'px';
-    document.dispatchEvent(new Event('hotbar-changed'));
+  _onCraftSlotClick(index, e) {
+    // Slot clicks in the crafting view delegate to the unified slot handler
+    this._onSlotClick(index, e);
     this._refreshCraftingUI();
   }
 
   _updateCraftingResult() {
-    // Build flat grid of types for recipe matching
     const grid = this.craftingGrid.map(s => (s ? s.type : 0));
     this.craftingResult = findMatchingRecipe(grid);
   }
@@ -873,7 +967,7 @@ export class Inventory {
       this.craftGrid.appendChild(cell);
     }
 
-    // Output slot
+    // Output
     this.craftOutput.innerHTML = '';
     if (this.craftingResult) {
       const resultCell = this._makeCellWithBlock(this.craftingResult.type, String(this.craftingResult.count));
@@ -885,30 +979,28 @@ export class Inventory {
       this.craftOutput.style.cursor = 'default';
     }
 
-    // Player inventory in crafting view
+    // Player inventory in crafting view (slots 9..35)
     this.craftPersonalGrid.innerHTML = '';
     for (let i = 0; i < MAIN_SLOTS; i++) {
-      const slot = this.personalSlots[i];
+      const slotIdx = HOTBAR_SLOTS + i;
+      const s = this.slots[slotIdx];
       let cell;
-      if (slot && slot.count > 0) {
-        const countText = isCreative ? '\u221e' : String(slot.count);
-        cell = this._makeCellWithBlock(slot.type, countText);
+      if (s && s.count > 0) {
+        cell = this._makeCellWithBlock(s.type, String(s.count));
       } else {
         cell = this._makeEmptyCell();
       }
-      cell.addEventListener('click', (e) => this._onCraftPersonalClick(i, e));
+      cell.addEventListener('click', (e) => this._onCraftSlotClick(slotIdx, e));
       this.craftPersonalGrid.appendChild(cell);
     }
 
-    // Hotbar in crafting view
+    // Hotbar in crafting view (slots 0..8)
     this.craftHotbarGrid.innerHTML = '';
     for (let i = 0; i < HOTBAR_SLOTS; i++) {
-      const bt = this.hotbarBlocks[i];
+      const s = this.slots[i];
       let cell;
-      if (bt !== BlockType.AIR) {
-        const count = this.getCount(bt);
-        const countText = isCreative ? '\u221e' : (count > 0 ? String(count) : '0');
-        cell = this._makeCellWithBlock(bt, countText);
+      if (s && s.count > 0) {
+        cell = this._makeCellWithBlock(s.type, String(s.count));
       } else {
         cell = this._makeEmptyCell();
       }
@@ -916,36 +1008,44 @@ export class Inventory {
         cell.style.borderColor = '#5f5';
         cell.style.background = '#6b8b6b';
       }
-      cell.addEventListener('click', (e) => this._onCraftHotbarClick(i, e));
+      cell.addEventListener('click', (e) => this._onCraftSlotClick(i, e));
       this.craftHotbarGrid.appendChild(cell);
     }
+
+    // Recipe book — all recipes (3x3 grid)
+    this._renderRecipeBook(this.recipeBookList, this.craftingGrid, 3, 3, () => {
+      this._updateCraftingResult();
+      this._refreshCraftingUI();
+      document.dispatchEvent(new Event('hotbar-changed'));
+    });
   }
 
   // ── Inventory 2x2 mini crafting ──
 
   _onInvCraftGridClick(index, e) {
     if (this.heldItem) {
-      // Place held item into 2x2 grid
       const existing = this.invCraftingGrid[index];
-      if (existing && existing.type === this.heldItem.type) {
-        existing.count += (this.heldItem.count === Infinity ? 1 : this.heldItem.count);
-        if (this.heldItem.source !== 'catalog' && this.heldItem.source !== 'craftOutput') {
-          // item consumed
+      const h = this.heldItem;
+      const heldCount = h.count === Infinity ? 1 : h.count;
+      if (existing && existing.type === h.type) {
+        existing.count += heldCount;
+        if (h.count === Infinity) {
+          // catalog: keep cursor
+        } else {
+          this._clearHeld();
         }
       } else if (existing) {
-        // Swap
-        const newSlot = { type: this.heldItem.type, count: this.heldItem.count === Infinity ? 1 : this.heldItem.count };
-        this.invCraftingGrid[index] = newSlot;
+        this.invCraftingGrid[index] = { type: h.type, count: heldCount };
         this._pickUp(existing.type, existing.count, { area: 'invCrafting', index });
       } else {
-        this.invCraftingGrid[index] = { type: this.heldItem.type, count: this.heldItem.count === Infinity ? 1 : this.heldItem.count };
-      }
-      if (!existing || existing.type === this.heldItem.type) {
-        this.heldItem = null;
-        this.cursorEl.style.display = 'none';
+        this.invCraftingGrid[index] = { type: h.type, count: heldCount };
+        if (h.count === Infinity) {
+          // catalog: keep cursor
+        } else {
+          this._clearHeld();
+        }
       }
     } else {
-      // Pick up from 2x2 grid
       const slot = this.invCraftingGrid[index];
       if (!slot) return;
       this.invCraftingGrid[index] = null;
@@ -963,18 +1063,14 @@ export class Inventory {
 
     const result = this.invCraftingResult;
 
-    // Consume one of each ingredient from 2x2 grid
     for (let i = 0; i < 4; i++) {
       const slot = this.invCraftingGrid[i];
       if (slot) {
         slot.count -= 1;
-        if (slot.count <= 0) {
-          this.invCraftingGrid[i] = null;
-        }
+        if (slot.count <= 0) this.invCraftingGrid[i] = null;
       }
     }
 
-    // Add result to inventory
     this.addBlock(result.type, result.count);
 
     this._updateInvCraftingResult();
@@ -983,7 +1079,6 @@ export class Inventory {
   }
 
   _updateInvCraftingResult() {
-    // Embed 2x2 grid into 3x3 for recipe matching
     const g = this.invCraftingGrid;
     const grid9 = [
       g[0] ? g[0].type : 0, g[1] ? g[1].type : 0, 0,
@@ -996,44 +1091,39 @@ export class Inventory {
   _refreshUI() {
     const isCreative = GameMode.isCreative();
 
-    // Catalog (left)
-    this.catalogGrid.innerHTML = '';
-    for (const bt of CATALOG_ITEMS) {
-      const count = this.getCount(bt);
-      const countText = isCreative ? '\u221e' : (count > 0 ? String(count) : null);
-      const cell = this._makeCellWithBlock(bt, countText);
-      if (!isCreative && count === 0) {
-        cell.style.opacity = '0.4';
-        cell.style.cursor = 'not-allowed';
+    // Catalog (left) — only visible in creative
+    this.leftPanel.style.display = isCreative ? 'flex' : 'none';
+    if (isCreative) {
+      this.catalogGrid.innerHTML = '';
+      for (const bt of CATALOG_ITEMS) {
+        const cell = this._makeCellWithBlock(bt, '∞');
+        cell.addEventListener('click', (e) => this._onCatalogClick(bt, e));
+        this.catalogGrid.appendChild(cell);
       }
-      cell.addEventListener('click', (e) => this._onCatalogClick(bt, e));
-      this.catalogGrid.appendChild(cell);
     }
 
-    // Main inventory (right, 27 slots)
+    // Main inventory (slots 9..35)
     this.mainGrid.innerHTML = '';
     for (let i = 0; i < MAIN_SLOTS; i++) {
-      const slot = this.personalSlots[i];
+      const slotIdx = HOTBAR_SLOTS + i;
+      const s = this.slots[slotIdx];
       let cell;
-      if (slot && slot.count > 0) {
-        const countText = isCreative ? '\u221e' : String(slot.count);
-        cell = this._makeCellWithBlock(slot.type, countText);
+      if (s && s.count > 0) {
+        cell = this._makeCellWithBlock(s.type, String(s.count));
       } else {
         cell = this._makeEmptyCell();
       }
-      cell.addEventListener('click', (e) => this._onPersonalClick(i, e));
+      cell.addEventListener('click', (e) => this._onSlotClick(slotIdx, e));
       this.mainGrid.appendChild(cell);
     }
 
-    // Hotbar (right, 9 slots)
+    // Hotbar (slots 0..8)
     this.hotbarGrid.innerHTML = '';
     for (let i = 0; i < HOTBAR_SLOTS; i++) {
-      const bt = this.hotbarBlocks[i];
+      const s = this.slots[i];
       let cell;
-      if (bt !== BlockType.AIR) {
-        const count = this.getCount(bt);
-        const countText = isCreative ? '\u221e' : (count > 0 ? String(count) : '0');
-        cell = this._makeCellWithBlock(bt, countText);
+      if (s && s.count > 0) {
+        cell = this._makeCellWithBlock(s.type, String(s.count));
       } else {
         cell = this._makeEmptyCell();
       }
@@ -1041,11 +1131,11 @@ export class Inventory {
         cell.style.borderColor = '#5f5';
         cell.style.background = '#6b8b6b';
       }
-      cell.addEventListener('click', (e) => this._onHotbarClick(i, e));
+      cell.addEventListener('click', (e) => this._onSlotClick(i, e));
       this.hotbarGrid.appendChild(cell);
     }
 
-    // Trash bin visibility
+    // Trash bin visibility (creative only)
     this.trashEl.style.display = isCreative ? 'flex' : 'none';
 
     // 2x2 mini crafting grid (survival only)
@@ -1073,6 +1163,15 @@ export class Inventory {
       this.invCraftOutput.style.cursor = 'default';
     }
 
+    // Recipe book — only 2x2-fitting recipes (survival only, alongside the 2x2 grid)
+    if (!isCreative) {
+      this._renderRecipeBook(this.invRecipeBookList, this.invCraftingGrid, 2, 2, () => {
+        this._updateInvCraftingResult();
+        this._refreshUI();
+        document.dispatchEvent(new Event('hotbar-changed'));
+      });
+    }
+
     // Hint
     if (this.heldItem) {
       const data = getItemOrBlockData(this.heldItem.type);
@@ -1080,7 +1179,9 @@ export class Inventory {
       const trashHint = isCreative ? ' or trash bin to destroy' : '';
       this.hintEl.textContent = `Holding ${name} — click a slot to place${trashHint}`;
     } else {
-      this.hintEl.textContent = 'Click a block to pick it up';
+      this.hintEl.textContent = isCreative
+        ? 'Click a block to pick it up'
+        : 'Click a slot to pick up its stack';
     }
   }
 }
