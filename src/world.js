@@ -95,6 +95,10 @@ export class World {
               const oreVal = this.noise3.noise3D(worldX * 0.1, y * 0.1, worldZ * 0.1);
               if (oreVal > 0.6) blocks[idx] = BlockType.IRON_ORE;
             }
+            if (y < 12) {
+              const goldVal = this.noise3.noise3D(worldX * 0.12 + 250, y * 0.12, worldZ * 0.12 + 250);
+              if (goldVal > 0.72) blocks[idx] = BlockType.GOLD_ORE;
+            }
             if (y < 50) {
               const coalVal = this.noise3.noise3D(worldX * 0.08 + 100, y * 0.08, worldZ * 0.08 + 100);
               if (coalVal > 0.55) blocks[idx] = BlockType.COAL_ORE;

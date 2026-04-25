@@ -367,6 +367,7 @@ const textures = {
   gravel:       gravel(),
   coal_ore:     ore('222222', 112),
   iron_ore:     ore('c8a060', 113),
+  gold_ore:     ore('f9d048', 118),
   cobblestone:  cobblestone(),
   oak_planks:   planks(),
   snow:         snow(),

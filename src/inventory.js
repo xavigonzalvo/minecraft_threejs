@@ -8,7 +8,7 @@ import {
 const PLACEABLE_BLOCKS = [
   BlockType.GRASS, BlockType.DIRT, BlockType.STONE, BlockType.SAND,
   BlockType.OAK_LOG, BlockType.OAK_LEAVES, BlockType.GRAVEL,
-  BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.COBBLESTONE,
+  BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.GOLD_ORE, BlockType.COBBLESTONE,
   BlockType.OAK_PLANKS, BlockType.SNOW, BlockType.GLASS, BlockType.BRICK,
   BlockType.CRAFTING_TABLE,
 ];
